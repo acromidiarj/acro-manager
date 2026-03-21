@@ -37,4 +37,4 @@ Este documento serve como a **Fonte Única de Verdade (SoT)** para agentes de IA
 
 ## 🚀 Repositório e Deploy
 *   **Git URL**: `https://github.com/acromidiarj/acro-manager.git`
-*   **Release Atual**: `v1.0.1` (Implementação 100% autônoma das réguas 2/7/15, bloqueios e Workflow GitHub Actions com build ZIP e AcroLicense SDK auto-update integrados).
+*   **Release Atual**: `v1.0.2` (Implementação 100% autônoma das réguas 2/7/15, bloqueios e Workflow GitHub Actions com build ZIP e AcroLicense SDK auto-update integrados).
