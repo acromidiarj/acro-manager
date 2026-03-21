@@ -37,4 +37,12 @@ Este documento serve como a **Fonte Única de Verdade (SoT)** para agentes de IA
 
 ## 🚀 Repositório e Deploy
 *   **Git URL**: `https://github.com/acromidiarj/acro-manager.git`
-*   **Release Atual**: `v2.0.0` (Super Nova Funcionalidade: Kanban CRM Nativo).
+*   **Release Atual**: `v3.0.1` (Mega Plataforma Multi-Gateway, Pipeline CRM Avançado e Limpador UI).
+
+## 🌟 Features / Update v3.0.1+
+*   **Motor Financeiro Multi-Gateway**: Interfaces de PagBank, Mercado Pago, Pagar.me, Stripe e Asaas instanciados via `Acromidia_Gateway_Factory`.
+*   **Migração de Tokens**: Logica em `Acromidia_Encryption::decrypt(true)` com tolerância legada (fallback raw text) para chaves de API cruas antigas.
+*   **Pipeline CRM (Tabs v2.0)**: O Funil é agrupado utilizando abas dinâmicas (`Aquisição e Setup` vs `Retenção e Risco`) pelo `crmTab`.
+*   **Automação Ativa**: Contas que recebem sincronização automática de faturamento saudável ativam-se direto em `ativo`, saltando `onboarding`.
+*   **UI Monitoramento**: Utilização de `overflow-hidden` seguro nas tabelas (resolvendo botões via CSS direções contrárias ou absolutas) e reset watch de estados de busca entre `views`.
+*   **Paginação**: Tabela Carteira utilizando contadores dinâmicos no computed properties (`currentPage`, `totalPages`).
