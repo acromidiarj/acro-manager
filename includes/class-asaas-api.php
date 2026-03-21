@@ -1,7 +1,7 @@
 <?php
 if ( ! defined( 'ABSPATH' ) ) { exit; }
 
-class Acromidia_Asaas_API {
+class Acromidia_Asaas_API implements Acromidia_Gateway_Interface {
     private $api_key;
     private $base_url;
 
@@ -46,6 +46,10 @@ class Acromidia_Asaas_API {
         ];
 
         return $this->request( '/customers', 'POST', $data );
+    }
+
+    public function update_customer( $customer_id, $data ) {
+        return $this->request( '/customers/' . $customer_id, 'POST', $data );
     }
 
     public function create_subscription( $customer_id, $value, $next_due_date, $description ) {

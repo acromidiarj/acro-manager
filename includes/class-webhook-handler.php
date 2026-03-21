@@ -26,7 +26,7 @@ class Acromidia_Webhook_Handler {
             return new \WP_REST_Response( [ 'error' => 'Customer ID ausente' ], 400 );
         }
 
-        // Buscar o post do cliente pelo meta _acro_asaas_id
+        // Buscar o post do cliente pelo meta _acro_gateway_customer_id
         $client_post = $this->find_client_by_asaas_id( $customer_id );
 
         if ( ! $client_post ) {
@@ -128,7 +128,7 @@ class Acromidia_Webhook_Handler {
     }
 
     /**
-     * Busca um post acro_client pelo _acro_asaas_id.
+     * Busca um post acro_client pelo _acro_gateway_customer_id.
      */
     private function find_client_by_asaas_id( $asaas_id ) {
         $query = new \WP_Query( [
@@ -137,7 +137,7 @@ class Acromidia_Webhook_Handler {
             'post_status'    => 'publish',
             'meta_query'     => [
                 [
-                    'key'   => '_acro_asaas_id',
+                    'key'   => '_acro_gateway_customer_id',
                     'value' => $asaas_id,
                 ]
             ],

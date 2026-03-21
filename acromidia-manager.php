@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Acromidia Manager
  * Description: Sistema completo de gestão de assinaturas, integração Asaas e notificações WhatsApp.
- * Version: 2.0.1
+ * Version: 3.0.0
  * Author: Especialista IA
  * Text Domain: acromidia-manager
  */
@@ -14,6 +14,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 // Carrega as classes do plugin
 require_once plugin_dir_path( __FILE__ ) . 'includes/class-encryption.php';
 require_once plugin_dir_path( __FILE__ ) . 'includes/class-settings.php';
+require_once plugin_dir_path( __FILE__ ) . 'includes/class-gateway-factory.php';
 require_once plugin_dir_path( __FILE__ ) . 'includes/class-asaas-api.php';
 require_once plugin_dir_path( __FILE__ ) . 'includes/class-whatsapp-api.php';
 require_once plugin_dir_path( __FILE__ ) . 'includes/class-webhook-handler.php';
@@ -299,20 +300,20 @@ class Acromidia_Manager {
         update_post_meta( $post_id, '_acro_site_url', $site_url );
         update_post_meta( $post_id, '_acro_status', 'ativo' );
 
-        // Tentar criar cliente no Asaas (se API configurada)
-        $asaas_id = '';
-        if ( Acromidia_Settings::has( 'asaas_api_key' ) ) {
-            $asaas = new Acromidia_Asaas_API();
-            $result = $asaas->create_customer( $name, $cpf_cnpj, $email, $phone );
+        // Tentar criar cliente no Gateway (se API configurada)
+        $gateway_id = '';
+        if ( Acromidia_Gateway_Factory::is_configured() ) {
+            $gateway = Acromidia_Gateway_Factory::get_engine();
+            $result = $gateway->create_customer( $name, $cpf_cnpj, $email, $phone );
 
             if ( ! empty( $result['id'] ) ) {
-                $asaas_id = $result['id'];
-                update_post_meta( $post_id, '_acro_asaas_id', $asaas_id );
+                $gateway_id = $result['id'];
+                update_post_meta( $post_id, '_acro_gateway_customer_id', $gateway_id );
 
                 // Criar assinatura automaticamente
                 if ( $mrr > 0 ) {
                     $next_due = date( 'Y-m-d', strtotime( '+30 days' ) );
-                    $asaas->create_subscription( $asaas_id, $mrr, $next_due, "Mensalidade Acromidia - {$name}" );
+                    $gateway->create_subscription( $gateway_id, $mrr, $next_due, "Mensalidade Acromidia - {$name}" );
                 }
             }
         }
@@ -440,21 +441,21 @@ class Acromidia_Manager {
 
         $reminder_type = $request->get_param( 'reminder_type' ) ?: 'manual';
         $client_name = $post->post_title;
-        $asaas_id    = get_post_meta( $id, '_acro_asaas_id', true );
+        $asaas_id    = get_post_meta( $id, '_acro_gateway_customer_id', true );
         $pix_code    = 'Disponível na fatura';
         $invoice_url = '';
 
         // Tenta buscar dados reais do Asaas
-        if ( ! empty( $asaas_id ) && Acromidia_Settings::has( 'asaas_api_key' ) ) {
-            $asaas    = new Acromidia_Asaas_API();
-            $payments = $asaas->list_payments( $asaas_id );
+        if ( ! empty( $asaas_id ) && Acromidia_Gateway_Factory::is_configured() ) {
+            $gateway  = Acromidia_Gateway_Factory::get_engine();
+            $payments = $gateway->list_payments( $asaas_id );
 
             if ( ! empty( $payments['data'] ) ) {
                 $latest = $payments['data'][0];
                 $invoice_url = $latest['invoiceUrl'] ?? $latest['bankSlipUrl'] ?? '';
 
                 if ( ! empty( $latest['id'] ) ) {
-                    $pix = $asaas->get_payment_pix_qrcode( $latest['id'] );
+                    $pix = $gateway->get_payment_pix_qrcode( $latest['id'] );
                     $pix_code = $pix['payload'] ?? $pix_code;
                 }
             }
@@ -481,11 +482,11 @@ class Acromidia_Manager {
             return new \WP_REST_Response( [ 'error' => 'Cliente não encontrado' ], 404 );
         }
 
-        if ( ! Acromidia_Settings::has( 'asaas_api_key' ) ) {
+        if ( ! Acromidia_Gateway_Factory::is_configured() ) {
             return new \WP_REST_Response( [ 'error' => 'API Asaas não configurada. Acesse Acromidia → Configurações.' ], 400 );
         }
 
-        $existing_asaas_id = get_post_meta( $id, '_acro_asaas_id', true );
+        $existing_asaas_id = get_post_meta( $id, '_acro_gateway_customer_id', true );
         if ( ! empty( $existing_asaas_id ) ) {
             return rest_ensure_response( [
                 'success'  => true,
@@ -509,7 +510,7 @@ class Acromidia_Manager {
         }
 
         $asaas_id = $result['id'];
-        update_post_meta( $id, '_acro_asaas_id', $asaas_id );
+        update_post_meta( $id, '_acro_gateway_customer_id', $asaas_id );
 
         // Criar assinatura se tiver mensalidade
         $subscription_id = '';
@@ -542,13 +543,13 @@ class Acromidia_Manager {
             return new \WP_REST_Response( [ 'error' => 'Cliente não encontrado' ], 404 );
         }
 
-        $asaas_id = get_post_meta( $id, '_acro_asaas_id', true );
+        $asaas_id = get_post_meta( $id, '_acro_gateway_customer_id', true );
         if ( empty( $asaas_id ) ) {
             return rest_ensure_response( [ 'data' => [] ] );
         }
 
-        $asaas = new Acromidia_Asaas_API();
-        $invoices = $asaas->list_payments( $asaas_id );
+        $gateway = Acromidia_Gateway_Factory::get_engine();
+        $invoices = $gateway->list_payments( $asaas_id );
 
         if ( isset( $invoices['error'] ) && $invoices['error'] ) {
             return new \WP_REST_Response( [ 'error' => 'Erro na API Asaas' ], 400 );
@@ -581,7 +582,7 @@ class Acromidia_Manager {
      * POST /asaas/import — Ideia 2: Smart Sync em massa
      */
     public function import_asaas_clients( \WP_REST_Request $request ) {
-        if ( ! Acromidia_Settings::has( 'asaas_api_key' ) ) {
+        if ( ! Acromidia_Gateway_Factory::is_configured() ) {
             return new \WP_REST_Response( [ 'error' => 'API Asaas não configurada' ], 400 );
         }
         
@@ -602,7 +603,7 @@ class Acromidia_Manager {
         $existing_asaas_ids = [];
         $existing_cpfs = [];
         foreach ( $existing as $p ) {
-            $a_id = get_post_meta( $p->ID, '_acro_asaas_id', true );
+            $a_id = get_post_meta( $p->ID, '_acro_gateway_customer_id', true );
             if ( $a_id ) $existing_asaas_ids[] = $a_id;
             
             $cpf = get_post_meta( $p->ID, '_acro_cpf_cnpj', true );
@@ -623,7 +624,7 @@ class Acromidia_Manager {
             ] );
             
             if ( ! is_wp_error( $post_id ) ) {
-                update_post_meta( $post_id, '_acro_asaas_id', $c['id'] );
+                update_post_meta( $post_id, '_acro_gateway_customer_id', $c['id'] );
                 update_post_meta( $post_id, '_acro_cpf_cnpj', sanitize_text_field( $c['cpfCnpj']??'' ) );
                 update_post_meta( $post_id, '_acro_email', sanitize_email( $c['email']??'' ) );
                 update_post_meta( $post_id, '_acro_phone', sanitize_text_field( $c['phone'] ?? $c['mobilePhone'] ?? '' ) );
@@ -642,11 +643,11 @@ class Acromidia_Manager {
      * GET /asaas/balance — Ideia 4: Dashboard Integrado de Métricas
      */
     public function get_asaas_balance( \WP_REST_Request $request ) {
-        if ( ! Acromidia_Settings::has( 'asaas_api_key' ) ) {
+        if ( ! Acromidia_Gateway_Factory::is_configured() ) {
             return rest_ensure_response( [ 'balance' => 0 ] );
         }
-        $asaas = new Acromidia_Asaas_API();
-        $balance = $asaas->get_balance();
+        $gateway = Acromidia_Gateway_Factory::get_engine();
+        $balance = $gateway->get_balance();
         return rest_ensure_response( [ 'balance' => $balance['balance'] ?? 0 ] );
     }
 
@@ -654,11 +655,11 @@ class Acromidia_Manager {
      * POST /asaas/sync-overdue — Busca real-time de devedores
      */
     public function sync_overdue_status( \WP_REST_Request $request ) {
-        if ( ! Acromidia_Settings::has( 'asaas_api_key' ) ) {
+        if ( ! Acromidia_Gateway_Factory::is_configured() ) {
             return new \WP_REST_Response( [ 'error' => 'API não configurada' ], 400 );
         }
-        $asaas = new Acromidia_Asaas_API();
-        $overdues = $asaas->list_overdue_payments();
+        $gateway = Acromidia_Gateway_Factory::get_engine();
+        $overdues = $gateway->list_overdue_payments();
         
         if ( isset( $overdues['error'] ) && $overdues['error'] ) {
             return new \WP_REST_Response( [ 'error' => 'Erro na API Asaas' ], 400 );
@@ -676,7 +677,7 @@ class Acromidia_Manager {
         
         $updated = 0;
         foreach ( $existing as $p ) {
-            $a_id = get_post_meta( $p->ID, '_acro_asaas_id', true );
+            $a_id = get_post_meta( $p->ID, '_acro_gateway_customer_id', true );
             $current_status = get_post_meta( $p->ID, '_acro_status', true );
             
             if ( $a_id && in_array( $a_id, $overdue_asaas_ids ) ) {
@@ -699,35 +700,35 @@ class Acromidia_Manager {
     // ───────────────────────────────────
 
     public function run_daily_billing() {
-        if ( ! Acromidia_Settings::has( 'asaas_api_key' ) || ! Acromidia_Settings::has( 'wa_token' ) ) return;
+        if ( ! Acromidia_Gateway_Factory::is_configured() || ! Acromidia_Settings::has( 'wa_token' ) ) return;
         
-        $asaas = new Acromidia_Asaas_API();
+        $gateway = Acromidia_Gateway_Factory::get_engine();
         $wa = new Acromidia_WhatsApp_API();
         
         // 1. Lembrete: 5 Dias Antes (Status PENDING no Asaas)
         $date_5_days = date( 'Y-m-d', strtotime( '+5 days' ) );
-        $payments_5_days = $asaas->get_pending_payments_by_date( $date_5_days );
-        $this->process_ruler_batch( $payments_5_days, $asaas, $wa, '5_days_before' );
+        $payments_5_days = $gateway->get_pending_payments_by_date( $date_5_days );
+        $this->process_ruler_batch( $payments_5_days, $gateway, $wa, '5_days_before' );
         
         // 2. Lembrete: Vencendo Hoje (Status PENDING no Asaas)
         $date_today = date( 'Y-m-d' );
-        $payments_today = $asaas->get_pending_payments_by_date( $date_today );
-        $this->process_ruler_batch( $payments_today, $asaas, $wa, 'today' );
+        $payments_today = $gateway->get_pending_payments_by_date( $date_today );
+        $this->process_ruler_batch( $payments_today, $gateway, $wa, 'today' );
         
         // 3. Cobrança: 2 Dias de Atraso (Status OVERDUE no Asaas)
         $date_2_days_ago = date( 'Y-m-d', strtotime( '-2 days' ) );
-        $payments_overdue = $asaas->request( "/payments?status=OVERDUE&dueDate[ge]={$date_2_days_ago}&dueDate[le]={$date_2_days_ago}" );
-        $this->process_ruler_batch( $payments_overdue, $asaas, $wa, '2_days_after' );
+        $payments_overdue = $gateway->request( "/payments?status=OVERDUE&dueDate[ge]={$date_2_days_ago}&dueDate[le]={$date_2_days_ago}" );
+        $this->process_ruler_batch( $payments_overdue, $gateway, $wa, '2_days_after' );
         
         // 4. Cobrança: 7 Dias de Atraso
         $date_7_days_ago = date( 'Y-m-d', strtotime( '-7 days' ) );
-        $payments_overdue_7 = $asaas->request( "/payments?status=OVERDUE&dueDate[ge]={$date_7_days_ago}&dueDate[le]={$date_7_days_ago}" );
-        $this->process_ruler_batch( $payments_overdue_7, $asaas, $wa, '7_days_after' );
+        $payments_overdue_7 = $gateway->request( "/payments?status=OVERDUE&dueDate[ge]={$date_7_days_ago}&dueDate[le]={$date_7_days_ago}" );
+        $this->process_ruler_batch( $payments_overdue_7, $gateway, $wa, '7_days_after' );
         
         // 5. Bloqueio Automático: 15 Dias de Atraso
         $date_15_days_ago = date( 'Y-m-d', strtotime( '-15 days' ) );
-        $payments_overdue_15 = $asaas->request( "/payments?status=OVERDUE&dueDate[ge]={$date_15_days_ago}&dueDate[le]={$date_15_days_ago}" );
-        $this->process_ruler_batch( $payments_overdue_15, $asaas, $wa, '15_days_after' );
+        $payments_overdue_15 = $gateway->request( "/payments?status=OVERDUE&dueDate[ge]={$date_15_days_ago}&dueDate[le]={$date_15_days_ago}" );
+        $this->process_ruler_batch( $payments_overdue_15, $gateway, $wa, '15_days_after' );
     }
 
     private function process_ruler_batch( $payments, $asaas, $wa, $reminder_type ) {
@@ -761,7 +762,7 @@ class Acromidia_Manager {
     }
 
     private function find_client_by_asaas_id( $asaas_id ) {
-        $query = new \WP_Query( [ 'post_type' => 'acro_client', 'posts_per_page' => 1, 'post_status' => 'publish', 'meta_query' => [ [ 'key' => '_acro_asaas_id', 'value' => $asaas_id ] ] ] );
+        $query = new \WP_Query( [ 'post_type' => 'acro_client', 'posts_per_page' => 1, 'post_status' => 'publish', 'meta_query' => [ [ 'key' => '_acro_gateway_customer_id', 'value' => $asaas_id ] ] ] );
         return $query->have_posts() ? $query->posts[0] : null;
     }
 

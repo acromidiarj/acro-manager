@@ -3,7 +3,7 @@ if ( ! defined( 'ABSPATH' ) ) { exit; }
 $rest_nonce = wp_create_nonce( 'wp_rest' );
 $rest_url   = rest_url( 'acromidia/v1' );
 $settings_url = admin_url( 'admin.php?page=acromidia-settings' );
-$asaas_ok     = \Acromidia_Settings::has('asaas_api_key');
+$asaas_ok     = \Acromidia_Gateway_Factory::is_configured();
 $wa_ok        = \Acromidia_Settings::has('wa_token') && \Acromidia_Settings::has('wa_phone_id');
 ?>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -319,9 +319,10 @@ html, body, #wpwrap, #wpbody, #wpbody-content, #wpfooter {
                 </div>
             </div>
             
-            <div class="relative w-full md:w-80">
+            <div class="relative w-full md:w-80 flex items-center">
                 <i data-lucide="search" class="input-icon"></i>
-                <input v-model="search" type="text" placeholder="Localizar por nome..." class="modern-input">
+                <input v-model="search" type="text" placeholder="Localizar por nome..." class="modern-input !pr-10">
+                <button v-show="search" @click="search=''" class="absolute right-3 text-slate-400 hover:text-rose-500 transition-colors p-1" title="Limpar busca"><i data-lucide="x" class="w-4 h-4"></i></button>
             </div>
         </header>
 
@@ -360,7 +361,7 @@ html, body, #wpwrap, #wpbody, #wpbody-content, #wpfooter {
                                 <div class="relative group flex items-center shrink-0">
                                     <button @click="sendWhatsApp($event, c, 'manual')" class="p-2.5 rounded-xl border-2 border-emerald-100 text-emerald-600 hover:bg-emerald-50 transition-all flex items-center justify-center" title="Cobrança Padrão"><i data-lucide="message-circle" class="w-4 h-4"></i></button>
                                     <!-- Dropdown Menu -->
-                                    <div class="absolute bottom-full mb-2 right-0 md:left-1/2 md:-translate-x-1/2 hidden group-hover:flex flex-col gap-1.5 bg-white shadow-[0_10px_40px_-10px_rgba(0,0,0,0.15)] p-2.5 rounded-2xl border border-slate-100 z-50 min-w-[160px] animate-in fade-in zoom-in-95 duration-200">
+                                    <div class="absolute right-full mr-4 top-1/2 -translate-y-1/2 hidden group-hover:flex flex-col gap-1 bg-white shadow-[0_10px_40px_-10px_rgba(0,0,0,0.2)] p-2 rounded-2xl border border-slate-200 z-[100] min-w-[180px] animate-in fade-in slide-in-from-right-2 duration-200">
                                         <button @click.prevent="sendWhatsApp($event, c, '5_days_before')" class="text-[10px] font-black text-slate-500 hover:text-indigo-600 text-left px-3 py-2 uppercase hover:bg-indigo-50 rounded-xl transition-colors whitespace-nowrap truncate"><i data-lucide="clock" class="w-3 h-3 inline-block mb-0.5 opacity-50 mr-1"></i> Lembrete Preventivo</button>
                                         <button @click.prevent="sendWhatsApp($event, c, '7_days_after')" class="text-[10px] font-black text-rose-500 hover:text-rose-600 text-left px-3 py-2 uppercase hover:bg-rose-50 rounded-xl transition-colors whitespace-nowrap truncate"><i data-lucide="alert-triangle" class="w-3 h-3 inline-block mb-0.5 opacity-50 mr-1"></i> Aviso (Atrasado 7 Dias)</button>
                                         <button @click.prevent="sendWhatsApp($event, c, '15_days_after')" class="text-[10px] font-black text-rose-700 hover:text-rose-800 text-left px-3 py-2 uppercase hover:bg-rose-100 rounded-xl transition-colors whitespace-nowrap truncate"><i data-lucide="ban" class="w-3 h-3 inline-block mb-0.5 opacity-50 mr-1"></i> Ameaça (15 Dias)</button>
@@ -375,6 +376,18 @@ html, body, #wpwrap, #wpbody, #wpbody-content, #wpfooter {
                     </tr>
                 </tbody>
             </table>
+            
+            <div v-if="totalPages > 1" class="px-8 py-5 bg-slate-50 border-t border-slate-100 flex items-center justify-between">
+                <span class="text-[10px] font-black uppercase tracking-widest text-slate-400">Página {{ currentPage }} de {{ totalPages }} • {{ totalFiltered }} Clientes</span>
+                <div class="flex items-center gap-2">
+                    <button @click="currentPage--" :disabled="currentPage === 1" class="w-8 h-8 flex items-center justify-center border border-slate-200 bg-white rounded-lg hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm">
+                        <i data-lucide="chevron-left" class="w-4 h-4 text-slate-600"></i>
+                    </button>
+                    <button @click="currentPage++" :disabled="currentPage === totalPages" class="w-8 h-8 flex items-center justify-center border border-slate-200 bg-white rounded-lg hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm">
+                        <i data-lucide="chevron-right" class="w-4 h-4 text-slate-600"></i>
+                    </button>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -391,9 +404,10 @@ html, body, #wpwrap, #wpbody, #wpbody-content, #wpfooter {
             
             <div class="flex items-center gap-4">
                 <div class="text-[10px] uppercase font-black tracking-widest text-slate-400 bg-slate-100 py-2 px-4 rounded-xl flex items-center gap-2 hidden lg:flex"><i data-lucide="zap" class="w-3 h-3 text-emerald-500"></i> Smart Engine Asaas</div>
-                <div class="relative w-full md:w-64">
+                <div class="relative w-full md:w-64 flex items-center">
                     <i data-lucide="search" class="input-icon"></i>
-                    <input v-model="search" type="text" placeholder="Filtrar CRM..." class="modern-input !text-sm !h-12 !rounded-xl">
+                    <input v-model="search" type="text" placeholder="Filtrar CRM..." class="modern-input !text-sm !h-12 !rounded-xl !pr-10">
+                    <button v-show="search" @click="search=''" class="absolute right-3 text-slate-400 hover:text-rose-500 transition-colors p-1" title="Limpar busca"><i data-lucide="x" class="w-4 h-4"></i></button>
                 </div>
                 <button v-if="crmTab==='sales'" @click="openLeadModal" class="btn-primary !h-12 !px-5 !rounded-xl shadow-md"><i data-lucide="user-plus" class="w-4 h-4"></i> Lead Manual</button>
             </div>
@@ -402,7 +416,7 @@ html, body, #wpwrap, #wpbody, #wpbody-content, #wpfooter {
         <div class="flex gap-6 overflow-x-auto pb-8 items-start snap-x" style="min-height: 550px;">
             <div v-for="column in crmColumns" :key="column.id" class="flex flex-col bg-slate-50/80 rounded-3xl w-[320px] shrink-0 p-5 border shadow-inner snap-center" :class="column.id === 'risk' ? 'border-rose-100 bg-rose-50/30' : 'border-slate-200'" @dragover.prevent @dragenter.prevent @drop="onDrop($event, column.id)">
                 <h3 class="font-black text-slate-800 text-sm mb-5 flex items-center justify-between">
-                    <span class="flex items-center gap-2"><div class="w-2.5 h-2.5 rounded-full shadow-sm" :class="column.color"></div> {{ column.label }}</span>
+                    <span class="flex items-center gap-2"><div class="w-2.5 h-2.5 rounded-full shadow-sm" :class="column.id === 'risk' ? 'bg-rose-500' : (column.id === 'lost' ? 'bg-slate-800' : (column.id === 'ativo' ? 'bg-emerald-500' : (column.id === 'onboarding' ? 'bg-sky-500' : 'bg-slate-400')))"></div> {{ column.label }}</span>
                     <span class="bg-white px-2.5 py-1 rounded-lg text-[10px] shadow-sm border border-slate-100 text-slate-500">{{ crmClients.filter(c => getPipelineStage(c) === column.id).length }}</span>
                 </h3>
                 
@@ -414,7 +428,7 @@ html, body, #wpwrap, #wpbody, #wpbody-content, #wpfooter {
                          @dragstart="onDragStart($event, c)">
                         
                         <div class="flex items-start gap-4 mb-4">
-                            <div class="w-10 h-10 rounded-2xl text-white flex items-center justify-center font-black text-lg shadow-md shrink-0 transition-transform group-hover:scale-105" :class="column.color">{{ c.name.charAt(0) }}</div>
+                            <div class="w-10 h-10 rounded-2xl text-white flex items-center justify-center font-black text-lg shadow-md shrink-0 transition-transform group-hover:scale-105" :class="getPipelineStage(c) === 'risk' ? 'bg-rose-500' : (getPipelineStage(c) === 'lost' ? 'bg-slate-800' : (getPipelineStage(c) === 'ativo' ? 'bg-emerald-500' : (getPipelineStage(c) === 'onboarding' ? 'bg-sky-500' : 'bg-slate-400')))">{{ c.name.charAt(0).toUpperCase() }}</div>
                             <div class="flex-1 min-w-0">
                                 <p class="font-black text-sm text-slate-900 truncate leading-tight mt-0.5">{{ c.name }}</p>
                                 <p v-if="c.product" class="text-[8px] uppercase tracking-widest text-indigo-500 font-black bg-indigo-50 border border-indigo-100 py-0.5 px-1.5 rounded-md mt-1 mb-1 w-max max-w-[130px] truncate"><i data-lucide="tag" class="w-2 h-2 inline-block mr-0.5 align-text-bottom"></i>{{ c.product }}</p>
@@ -631,6 +645,9 @@ html, body, #wpwrap, #wpbody, #wpbody-content, #wpfooter {
       const waOk = ref(<?php echo $wa_ok?'true':'false'; ?>);
       const settingsUrl = '<?php echo esc_url($settings_url); ?>';
       
+      const currentPage = ref(1);
+      const itemsPerPage = 10;
+
       const form = ref({ name: '', phone: '', mrr: null });
 
       // ── MASCARA MONETÁRIA ──
@@ -671,14 +688,30 @@ html, body, #wpwrap, #wpbody, #wpbody-content, #wpfooter {
         return v;
       };
 
-      const filteredClients = computed(() => {
+      watch(view, () => {
+        search.value = '';
+      });
+
+      const filteredExpanded = computed(() => {
         let list = clients.value;
         if (filterStatus.value !== 'todos') {
             list = list.filter(c => c.status === filterStatus.value);
         }
         if (!search.value) return list;
         const q = search.value.toLowerCase();
-        return list.filter(c => c.name.toLowerCase().includes(q) || (c.phone && c.phone.includes(q)));
+        return list.filter(c => c.name.toLowerCase().includes(q) || (c.phone && c.phone.includes(q)) || (c.product && c.product.toLowerCase().includes(q)));
+      });
+
+      const totalFiltered = computed(() => filteredExpanded.value.length);
+      const totalPages = computed(() => Math.ceil(totalFiltered.value / itemsPerPage) || 1);
+
+      const filteredClients = computed(() => {
+        const start = (currentPage.value - 1) * itemsPerPage;
+        return filteredExpanded.value.slice(start, start + itemsPerPage);
+      });
+
+      watch([search, filterStatus], () => {
+        currentPage.value = 1;
       });
 
       watch([filteredClients, view], () => {
@@ -956,11 +989,11 @@ html, body, #wpwrap, #wpbody, #wpbody-content, #wpfooter {
       // ── CRM PIPELINE LOGIC ──
       const crmTab = ref('sales');
       const allCrmColumns = [
-          { id: 'prospect', label: 'Prospecção (API)', color: 'bg-slate-400', group: 'sales' },
-          { id: 'onboarding', label: 'Implantação (Setup)', color: 'bg-sky-500', group: 'sales' },
-          { id: 'ativo', label: 'Ativo (Saudável)', color: 'bg-emerald-500', group: 'success' },
-          { id: 'risk', label: 'Risco de Churn (Inadimplente)', color: 'bg-rose-500', group: 'success' },
-          { id: 'lost', label: 'Inativo / Block', color: 'bg-slate-800', group: 'success' }
+          { id: 'prospect', label: 'Prospecção (API)', group: 'sales' },
+          { id: 'onboarding', label: 'Implantação (Setup)', group: 'sales' },
+          { id: 'ativo', label: 'Ativo (Saudável)', group: 'success' },
+          { id: 'risk', label: 'Risco de Churn (Inadimplente)', group: 'success' },
+          { id: 'lost', label: 'Inativo / Block', group: 'success' }
       ];
       
       const crmColumns = computed(() => {
@@ -976,7 +1009,8 @@ html, body, #wpwrap, #wpbody, #wpbody-content, #wpfooter {
       const getPipelineStage = (c) => {
           if (c.site_status === 'blocked') return 'lost';
           if (c.status === 'inadimplente') return 'risk';
-          return c.pipeline_stage || 'onboarding';
+          if (c.status === 'ativo' && !c.pipeline_stage) return 'ativo';
+          return c.pipeline_stage || 'prospect';
       };
 
       const onDragStart = (e, client) => {
@@ -1098,7 +1132,7 @@ html, body, #wpwrap, #wpbody, #wpbody-content, #wpfooter {
           nextTick(lucide.createIcons);
       });
 
-      return { view, clients, loading, search, filterStatus, showModal, showInvoicesModal, invoices, loadingInvoices, asaasBalance, loadingBalance, importing, massBilling, syncingStatus, saving, logs, loadingLogs, metrics, loadingReports, deleteTarget, editTarget, asaasOk, waOk, settingsUrl, form, filteredClients, crmClients, totalMRR, activeCount, overdueCount, fetchClients, fetchDashboardStats, fetchLogsAndMetrics, importAsaas, massBillOverdue, syncOverduesSilently, saveClient, executeDelete, formatMoney, sendWhatsApp, toggleBlock, syncAsaas, openInvoicesModal, displayMRR, handleMRRInput, displayPhone, handlePhoneInput, formatPhone, openEditModal, openLeadModal, crmTab, crmColumns, getPipelineStage, onDragStart, onDrop, getWaLink, moveStageByArrow, mrrAtivo, mrrRisco, pipelineBreakdown, productBreakdown };
+      return { view, clients, loading, search, filterStatus, showModal, showInvoicesModal, invoices, loadingInvoices, asaasBalance, loadingBalance, importing, massBilling, syncingStatus, saving, logs, loadingLogs, metrics, loadingReports, deleteTarget, editTarget, asaasOk, waOk, settingsUrl, form, filteredClients, crmClients, totalMRR, activeCount, overdueCount, fetchClients, fetchDashboardStats, fetchLogsAndMetrics, importAsaas, massBillOverdue, syncOverduesSilently, saveClient, executeDelete, formatMoney, sendWhatsApp, toggleBlock, syncAsaas, openInvoicesModal, displayMRR, handleMRRInput, displayPhone, handlePhoneInput, formatPhone, openEditModal, openLeadModal, crmTab, crmColumns, getPipelineStage, onDragStart, onDrop, getWaLink, moveStageByArrow, mrrAtivo, mrrRisco, pipelineBreakdown, productBreakdown, currentPage, totalPages, totalFiltered, itemsPerPage };
     }
   }).mount('#acro-app');
 })();

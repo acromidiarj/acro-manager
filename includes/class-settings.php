@@ -10,8 +10,19 @@ class Acromidia_Settings {
     /** Chave do wp_options onde tudo é armazenado */
     const OPTION_KEY = 'acromidia_settings';
 
-    /** Mapa dos campos de configuração */
     private static $fields = [
+        'primary_gateway'     => [
+            'label'       => 'Plataforma Ativa',
+            'help'        => 'Motor financeiro que será usado para criar assinaturas e faturas.',
+            'type'        => 'select',
+            'options'     => [
+                'asaas'       => 'Asaas Bank',
+                'mercadopago' => 'Mercado Pago',
+                'stripe'      => 'Stripe',
+                'pagarme'     => 'Pagar.me',
+                'pagbank'     => 'PagBank (UOL)'
+            ]
+        ],
         'asaas_api_key'       => [
             'label'       => 'Chave API Asaas',
             'placeholder' => '$aact_prod_...',
@@ -21,6 +32,46 @@ class Acromidia_Settings {
             'label'       => 'Token do Webhook Asaas',
             'placeholder' => 'Token para validação dos webhooks',
             'help'        => 'Configure ao criar o webhook no painel Asaas',
+        ],
+        'mp_access_token'     => [
+            'label'       => 'Access Token Mercado Pago',
+            'placeholder' => 'APP_USR-...',
+            'help'        => 'Mercado Pago → Suas Integrações → Credenciais de Produção',
+        ],
+        'mp_webhook_secret'   => [
+            'label'       => 'Webhook Secret Mercado Pago',
+            'placeholder' => 'Chave para validar webhooks (opcional)',
+            'help'        => 'Mercado Pago → Notificações → Webhooks',
+        ],
+        'stripe_api_key'      => [
+            'label'       => 'Secret Key Stripe',
+            'placeholder' => 'sk_live_...',
+            'help'        => 'Stripe Dashboard → Developers → API Keys',
+        ],
+        'stripe_webhook_secret' => [
+            'label'       => 'Signing Secret Stripe',
+            'placeholder' => 'whsec_...',
+            'help'        => 'Stripe → Developers → Webhooks → Signing secret',
+        ],
+        'pagarme_api_key'     => [
+            'label'       => 'Secret Key Pagar.me',
+            'placeholder' => 'sk_...',
+            'help'        => 'Pagar.me Dash → Configurações → Chaves de API',
+        ],
+        'pagarme_webhook_secret'=> [
+            'label'       => 'Webhook Secret Pagar.me',
+            'placeholder' => 'Secret configurado no Pagar.me',
+            'help'        => 'Validação de segurança das notificações.',
+        ],
+        'pagbank_api_key'     => [
+            'label'       => 'Token Sandbox / Produção PagBank',
+            'placeholder' => 'FEFDF...',
+            'help'        => 'PagBank → Suas Aplicações → Connect',
+        ],
+        'pagbank_webhook_secret'=> [
+            'label'       => 'Webhook Secret PagBank',
+            'placeholder' => 'Token de validação de notificação',
+            'help'        => 'Configure no painel de Notificações.',
         ],
         'wa_token'            => [
             'label'       => 'Token WhatsApp (Meta)',
@@ -157,7 +208,6 @@ class Acromidia_Settings {
             #wpcontent, #wpbody { padding-left: 0 !important; background: var(--acro-bg) !important; }
             #wpbody-content { padding-bottom: 60px; }
             .update-nag, .notice { display: none !important; }
-            #wpadminbar { background: #ffffff !important; border-bottom: 1px solid rgba(0,0,0,0.06) !important; }
 
             .card-glass { background: #ffffff; border: 1px solid var(--acro-border); border-radius: 24px; box-shadow: 0 20px 40px -10px rgb(0 0 0 / 0.05); }
 
@@ -207,18 +257,45 @@ class Acromidia_Settings {
                 </div>
             <?php endif; ?>
 
-            <form method="POST" class="space-y-12">
+            <form method="POST" class="relative">
                 <?php wp_nonce_field( 'acromidia_save_settings', 'acromidia_settings_nonce' ); ?>
 
-                <!-- ASAAS -->
+                <!-- TABS HEADER -->
+                <div class="flex border-b border-slate-200 mb-8 gap-8">
+                    <button type="button" class="tab-btn active pb-4 font-black uppercase tracking-wider text-[12px] border-b-4 border-slate-900 text-slate-900 transition-colors" data-target="tab-financeiro">Motor Financeiro</button>
+                    <button type="button" class="tab-btn pb-4 font-black uppercase tracking-wider text-[12px] border-b-4 border-transparent text-slate-400 hover:text-slate-600 transition-colors" data-target="tab-whatsapp">WhatsApp (Régua)</button>
+                    <button type="button" class="tab-btn pb-4 font-black uppercase tracking-wider text-[12px] border-b-4 border-transparent text-slate-400 hover:text-slate-600 transition-colors" data-target="tab-sistema">Sistema Interno</button>
+                </div>
+
+                <!-- TAB 1: Financeiro -->
+                <div id="tab-financeiro" class="tab-pane space-y-12 block">
+                    <!-- Motor Principal (Gateways) -->
                 <div class="card-glass overflow-hidden">
+                    <div class="px-10 py-8 border-b border-slate-100 bg-gradient-to-r from-slate-900 to-slate-800 flex items-center justify-between">
+                        <div class="flex items-center gap-6">
+                            <div class="w-16 h-16 bg-gradient-to-tr from-slate-700 to-slate-600 rounded-3xl flex items-center justify-center text-white shadow-xl shadow-slate-900/50">
+                                <i data-lucide="cpu" class="w-8 h-8"></i>
+                            </div>
+                            <div>
+                                <h2 class="text-2xl font-black text-white tracking-tighter">Motor Financeiro (Gateway)</h2>
+                                <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">Selecione o provedor B2B Principal</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="p-10 space-y-8 bg-white">
+                        <?php self::render_field( 'primary_gateway', 'server' ); ?>
+                    </div>
+                </div>
+
+                <!-- ASAAS -->
+                <div class="card-glass overflow-hidden" id="box-asaas">
                     <div class="px-10 py-8 border-b border-slate-100 bg-gradient-to-r from-slate-50 to-white flex items-center justify-between">
                         <div class="flex items-center gap-6">
                             <div class="w-16 h-16 bg-gradient-to-tr from-sky-400 to-sky-600 rounded-3xl flex items-center justify-center text-white shadow-xl shadow-sky-200">
                                 <i data-lucide="credit-card" class="w-8 h-8"></i>
                             </div>
                             <div>
-                                <h2 class="text-2xl font-black text-slate-900 tracking-tighter">Gateway Asaas</h2>
+                                <h2 class="text-2xl font-black text-slate-900 tracking-tighter">Credenciais Asaas</h2>
                                 <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">Faturamento e Assinaturas</p>
                             </div>
                         </div>
@@ -239,6 +316,124 @@ class Acromidia_Settings {
                     </div>
                 </div>
 
+                <!-- MERCADO PAGO -->
+                <div class="card-glass overflow-hidden hidden" id="box-mercadopago">
+                    <div class="px-10 py-8 border-b border-slate-100 bg-gradient-to-r from-blue-50 to-white flex items-center justify-between">
+                        <div class="flex items-center gap-6">
+                            <div class="w-16 h-16 bg-gradient-to-tr from-blue-500 to-cyan-400 rounded-3xl flex items-center justify-center text-white shadow-xl shadow-blue-200">
+                                <i data-lucide="shopping-bag" class="w-8 h-8"></i>
+                            </div>
+                            <div>
+                                <h2 class="text-2xl font-black text-slate-900 tracking-tighter">Credenciais Mercado Pago</h2>
+                                <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">Faturamento e Assinaturas</p>
+                            </div>
+                        </div>
+                        <?php if ( self::has('mp_access_token') ) : ?>
+                            <span class="px-4 py-2 bg-emerald-50 text-emerald-600 text-[10px] font-black rounded-full border border-emerald-200 uppercase tracking-[0.2em] flex items-center gap-2 shadow-sm"><i data-lucide="zap" class="w-3 h-3 text-emerald-500"></i> Integrado</span>
+                        <?php endif; ?>
+                    </div>
+                    <div class="p-10 space-y-8 bg-white">
+                        <?php self::render_field( 'mp_access_token', 'key' ); ?>
+                        <?php self::render_field( 'mp_webhook_secret', 'link' ); ?>
+                        <div class="pt-6 border-t border-slate-100">
+                            <label class="input-label mb-3">URL do Webhook (Copie para o Mercado Pago)</label>
+                            <div class="modern-input !bg-slate-50 flex items-center select-all !pl-0 cursor-copy !border-slate-200 overflow-hidden" style="padding:0">
+                                <span class="font-mono text-[13px] text-sky-600 truncate w-full px-6 py-4 bg-transparent outline-none m-0"><?php echo esc_html( rest_url( 'acromidia/v1/webhook/mercadopago' ) ); ?></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- STRIPE -->
+                <div class="card-glass overflow-hidden hidden" id="box-stripe">
+                    <div class="px-10 py-8 border-b border-slate-100 bg-gradient-to-r from-indigo-50 to-white flex items-center justify-between">
+                        <div class="flex items-center gap-6">
+                            <div class="w-16 h-16 bg-gradient-to-tr from-indigo-500 to-purple-500 rounded-3xl flex items-center justify-center text-white shadow-xl shadow-indigo-200">
+                                <i data-lucide="credit-card" class="w-8 h-8"></i>
+                            </div>
+                            <div>
+                                <h2 class="text-2xl font-black text-slate-900 tracking-tighter">Credenciais Stripe</h2>
+                                <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">Faturamento e Assinaturas</p>
+                            </div>
+                        </div>
+                        <?php if ( self::has('stripe_api_key') ) : ?>
+                            <span class="px-4 py-2 bg-emerald-50 text-emerald-600 text-[10px] font-black rounded-full border border-emerald-200 uppercase tracking-[0.2em] flex items-center gap-2 shadow-sm"><i data-lucide="zap" class="w-3 h-3 text-emerald-500"></i> Integrado</span>
+                        <?php endif; ?>
+                    </div>
+                    <div class="p-10 space-y-8 bg-white">
+                        <?php self::render_field( 'stripe_api_key', 'key' ); ?>
+                        <?php self::render_field( 'stripe_webhook_secret', 'link' ); ?>
+                        <div class="pt-6 border-t border-slate-100">
+                            <label class="input-label mb-3">URL do Webhook (Copie para o Stripe)</label>
+                            <div class="modern-input !bg-slate-50 flex items-center select-all !pl-0 cursor-copy !border-slate-200 overflow-hidden" style="padding:0">
+                                <span class="font-mono text-[13px] text-sky-600 truncate w-full px-6 py-4 bg-transparent outline-none m-0"><?php echo esc_html( rest_url( 'acromidia/v1/webhook/stripe' ) ); ?></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- PAGARME -->
+                <div class="card-glass overflow-hidden hidden" id="box-pagarme">
+                    <div class="px-10 py-8 border-b border-slate-100 bg-gradient-to-r from-emerald-50 to-white flex items-center justify-between">
+                        <div class="flex items-center gap-6">
+                            <div class="w-16 h-16 bg-gradient-to-tr from-emerald-500 to-teal-400 rounded-3xl flex items-center justify-center text-white shadow-xl shadow-emerald-200">
+                                <i data-lucide="briefcase" class="w-8 h-8"></i>
+                            </div>
+                            <div>
+                                <h2 class="text-2xl font-black text-slate-900 tracking-tighter">Credenciais Pagar.me</h2>
+                                <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">Faturamento e Assinaturas</p>
+                            </div>
+                        </div>
+                        <?php if ( self::has('pagarme_api_key') ) : ?>
+                            <span class="px-4 py-2 bg-emerald-50 text-emerald-600 text-[10px] font-black rounded-full border border-emerald-200 uppercase tracking-[0.2em] flex items-center gap-2 shadow-sm"><i data-lucide="zap" class="w-3 h-3 text-emerald-500"></i> Integrado</span>
+                        <?php endif; ?>
+                    </div>
+                    <div class="p-10 space-y-8 bg-white">
+                        <?php self::render_field( 'pagarme_api_key', 'key' ); ?>
+                        <?php self::render_field( 'pagarme_webhook_secret', 'link' ); ?>
+                        <div class="pt-6 border-t border-slate-100">
+                            <label class="input-label mb-3">URL do Webhook (Copie para o Pagar.me)</label>
+                            <div class="modern-input !bg-slate-50 flex items-center select-all !pl-0 cursor-copy !border-slate-200 overflow-hidden" style="padding:0">
+                                <span class="font-mono text-[13px] text-sky-600 truncate w-full px-6 py-4 bg-transparent outline-none m-0"><?php echo esc_html( rest_url( 'acromidia/v1/webhook/pagarme' ) ); ?></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- PAGBANK -->
+                <div class="card-glass overflow-hidden hidden" id="box-pagbank">
+                    <div class="px-10 py-8 border-b border-slate-100 bg-gradient-to-r from-green-50 to-white flex items-center justify-between">
+                        <div class="flex items-center gap-6">
+                            <div class="w-16 h-16 bg-gradient-to-tr from-green-500 to-lime-400 rounded-3xl flex items-center justify-center text-white shadow-xl shadow-green-200">
+                                <i data-lucide="badge-dollar-sign" class="w-8 h-8"></i>
+                            </div>
+                            <div>
+                                <h2 class="text-2xl font-black text-slate-900 tracking-tighter">Credenciais PagBank</h2>
+                                <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">Faturamento e Assinaturas</p>
+                            </div>
+                        </div>
+                        <?php if ( self::has('pagbank_api_key') ) : ?>
+                            <span class="px-4 py-2 bg-emerald-50 text-emerald-600 text-[10px] font-black rounded-full border border-emerald-200 uppercase tracking-[0.2em] flex items-center gap-2 shadow-sm"><i data-lucide="zap" class="w-3 h-3 text-emerald-500"></i> Integrado</span>
+                        <?php endif; ?>
+                    </div>
+                    <div class="p-10 space-y-8 bg-white">
+                        <?php self::render_field( 'pagbank_api_key', 'key' ); ?>
+                        <?php self::render_field( 'pagbank_webhook_secret', 'link' ); ?>
+                        <div class="pt-6 border-t border-slate-100">
+                            <label class="input-label mb-3">URL de Notificação (Copie para o PagBank)</label>
+                            <div class="modern-input !bg-slate-50 flex items-center select-all !pl-0 cursor-copy !border-slate-200 overflow-hidden" style="padding:0">
+                                <span class="font-mono text-[13px] text-sky-600 truncate w-full px-6 py-4 bg-transparent outline-none m-0"><?php echo esc_html( rest_url( 'acromidia/v1/webhook/pagbank' ) ); ?></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Fim do container de boxes => o JS injeta o box ativo logo ACIMA desta tag: -->
+                <div id="gateway-anchor"></div>
+                </div> <!-- /TAB 1 -->
+
+                <!-- TAB 2: WhatsApp -->
+                <div id="tab-whatsapp" class="tab-pane space-y-12 hidden">
                 <!-- WhatsApp -->
                 <div class="card-glass overflow-hidden">
                     <div class="px-10 py-8 border-b border-slate-100 bg-gradient-to-r from-slate-50 to-white flex items-center justify-between">
@@ -260,7 +455,10 @@ class Acromidia_Settings {
                         <?php self::render_field( 'wa_phone_id', 'hash' ); ?>
                     </div>
                 </div>
+                </div> <!-- /TAB 2 -->
 
+                <!-- TAB 3: Sistema -->
+                <div id="tab-sistema" class="tab-pane space-y-12 hidden">
                 <!-- Snippet Manager -->
                 <div class="card-glass overflow-hidden mt-12 mb-12">
                     <div class="px-10 py-8 border-b border-slate-100 bg-gradient-to-r from-indigo-50 to-white flex items-center justify-between">
@@ -320,8 +518,9 @@ function acro_check_site_status() {
 </pre>
                     </div>
                 </div>
+                </div> <!-- /TAB 3 -->
 
-                <div class="flex flex-col items-center gap-5 pt-8">
+                <div class="flex flex-col items-center gap-5 pt-8 mt-12 border-t border-slate-200">
                     <button type="submit" class="btn-primary max-w-md mx-auto">
                         <i data-lucide="lock" class="w-5 h-5"></i> Criptografar e Salvar Tudo
                     </button>
@@ -331,9 +530,85 @@ function acro_check_site_status() {
                     </div>
                 </div>
             </form>
+            
+            <div id="coming-soon-gateway" class="hidden card-glass p-12 overflow-hidden mt-8 border-dashed border-2 border-slate-200 bg-slate-50 flex-col items-center justify-center text-center">
+                <div class="w-20 h-20 bg-slate-200 rounded-3xl flex items-center justify-center text-slate-400 mb-6">
+                    <i data-lucide="hammer" class="w-10 h-10"></i>
+                </div>
+                <h3 class="text-2xl font-black text-slate-900 tracking-tighter">Gateway Em Desenvolvimento</h3>
+                <p class="text-slate-500 font-bold mt-2 text-sm max-w-md">Nossa equipe de engenharia está validando a API v3 desta plataforma. A integração nativa será liberada nas próximas atualizações automáticas.</p>
+            </div>
         </div>
 
-        <script>lucide.createIcons();</script>
+        <script>
+            lucide.createIcons();
+            
+            document.addEventListener('DOMContentLoaded', () => {
+                const gatewaySelect = document.getElementById('acro_primary_gateway');
+                const form = document.querySelector('form');
+                
+                const boxes = {
+                    'asaas': document.getElementById('box-asaas'),
+                    'mercadopago': document.getElementById('box-mercadopago'),
+                    'stripe': document.getElementById('box-stripe'),
+                    'pagarme': document.getElementById('box-pagarme'),
+                    'pagbank': document.getElementById('box-pagbank')
+                };
+                
+                const anchor = document.getElementById('gateway-anchor');
+                
+                function updateGatewayUI() {
+                    const val = gatewaySelect.value;
+                    
+                    Object.values(boxes).forEach(box => {
+                        if(box) {
+                            box.style.display = 'none';
+                            box.classList.remove('block');
+                        }
+                    });
+                    
+                    if(boxes[val]) {
+                        boxes[val].style.display = 'block';
+                        boxes[val].classList.add('block');
+                        anchor.parentNode.insertBefore(boxes[val], anchor);
+                    }
+                }
+                
+                if (gatewaySelect) {
+                    gatewaySelect.addEventListener('change', updateGatewayUI);
+                    updateGatewayUI();
+                }
+
+                // TAB LOGIC
+                const tabBtns = document.querySelectorAll('.tab-btn');
+                const tabPanes = document.querySelectorAll('.tab-pane');
+
+                tabBtns.forEach(btn => {
+                    btn.addEventListener('click', () => {
+                        // Reset all
+                        tabBtns.forEach(b => {
+                            b.classList.remove('active', 'border-slate-900', 'text-slate-900');
+                            b.classList.add('border-transparent', 'text-slate-400');
+                        });
+                        tabPanes.forEach(p => {
+                            p.classList.add('hidden');
+                            p.classList.remove('block');
+                        });
+
+                        // Set active
+                        btn.classList.add('active', 'border-slate-900', 'text-slate-900');
+                        btn.classList.remove('border-transparent', 'text-slate-400');
+                        
+                        const targetId = btn.getAttribute('data-target');
+                        const pane = document.getElementById(targetId);
+                        if(pane) {
+                            pane.classList.remove('hidden');
+                            pane.classList.add('block');
+                        }
+                    });
+                });
+            });
+        </script>
         <?php
     }
 
@@ -346,12 +621,19 @@ function acro_check_site_status() {
             $source = ( defined( $const ) && constant( $const ) !== '' ) ? 'wp-config.php' : 'Armazenamento Criptografado';
         }
         ?>
+        <?php
+        $type    = isset( $config['type'] ) ? $config['type'] : 'password';
+        $current = self::get( $key );
+        if ( $type === 'select' && empty( $current ) ) {
+            $current = array_key_first( $config['options'] );
+        }
+        ?>
         <div class="space-y-2">
             <div class="flex justify-between items-center px-1">
                 <label for="acro_<?php echo esc_attr( $key ); ?>" class="input-label">
                     <?php echo esc_html( $config['label'] ); ?>
                 </label>
-                <?php if ( $has_value ) : ?>
+                <?php if ( $has_value && $type !== 'select' ) : ?>
                     <span class="text-[9px] font-black text-emerald-500 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100 uppercase tracking-widest flex items-center gap-1">
                         <i data-lucide="check" class="w-2.5 h-2.5"></i> <?php echo esc_html( $source ); ?>
                     </span>
@@ -360,12 +642,26 @@ function acro_check_site_status() {
             
             <div class="relative">
                 <i data-lucide="<?php echo esc_attr( $icon ); ?>" class="input-icon"></i>
-                <input type="password"
-                       id="acro_<?php echo esc_attr( $key ); ?>"
-                       name="acro_<?php echo esc_attr( $key ); ?>"
-                       placeholder="<?php echo esc_attr( $has_value ? '••••••••••••••••••••' : $config['placeholder'] ); ?>"
-                       class="modern-input"
-                       autocomplete="off">
+                
+                <?php if ( $type === 'select' ) : ?>
+                    <select id="acro_<?php echo esc_attr( $key ); ?>"
+                            name="acro_<?php echo esc_attr( $key ); ?>"
+                            class="modern-input" style="padding-left: 54px; appearance: none; padding-right: 40px; cursor: pointer;">
+                        <?php foreach ( $config['options'] as $v => $l ) : ?>
+                            <option value="<?php echo esc_attr( $v ); ?>" <?php selected( $current, $v ); ?>><?php echo esc_html( $l ); ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                    <div class="absolute right-5 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
+                        <i data-lucide="chevron-down" class="w-5 h-5"></i>
+                    </div>
+                <?php else : ?>
+                    <input type="<?php echo esc_attr( $type ); ?>"
+                           id="acro_<?php echo esc_attr( $key ); ?>"
+                           name="acro_<?php echo esc_attr( $key ); ?>"
+                           placeholder="<?php echo esc_attr( $has_value ? '••••••••••••••••••••' : $config['placeholder'] ); ?>"
+                           class="modern-input"
+                           autocomplete="off">
+                <?php endif; ?>
             </div>
             
             <p class="text-[11px] text-slate-400 font-bold uppercase tracking-widest pl-1 mt-2 flex items-center gap-2"><i data-lucide="info" class="w-3 h-3 text-indigo-400"></i> <?php echo esc_html( $config['help'] ); ?></p>
