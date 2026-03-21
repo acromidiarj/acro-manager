@@ -102,6 +102,7 @@ html, body, #wpwrap, #wpbody, #wpbody-content, #wpfooter {
       <nav class="flex bg-slate-100 p-1.5 rounded-2xl">
         <button @click="view='dashboard'" :class="view==='dashboard'?'bg-white shadow-sm text-indigo-600':'text-slate-500'" class="px-6 py-2 rounded-xl text-sm font-black transition-all">Geral</button>
         <button @click="view='clients'" :class="view==='clients'?'bg-white shadow-sm text-indigo-600':'text-slate-500'" class="px-6 py-2 rounded-xl text-sm font-black transition-all">Carteira</button>
+        <button @click="view='crm'" :class="view==='crm'?'bg-white shadow-sm text-indigo-600':'text-slate-500'" class="px-6 py-2 rounded-xl text-sm font-black transition-all flex items-center gap-2"><i data-lucide="kanban" class="w-4 h-4"></i> Pipeline CRM</button>
         <button @click="view='reports'" :class="view==='reports'?'bg-white shadow-sm text-indigo-600':'text-slate-500'" class="px-6 py-2 rounded-xl text-sm font-black transition-all">Relatórios</button>
       </nav>
 
@@ -316,6 +317,59 @@ html, body, #wpwrap, #wpbody, #wpbody-content, #wpfooter {
                     </tr>
                 </tbody>
             </table>
+        </div>
+    </div>
+
+    <!-- ══ CRM PIPELINE ══ -->
+    <div v-if="view==='crm'" class="h-full flex flex-col pb-10">
+        <header class="mb-8 flex items-end justify-between">
+            <div>
+                <h2 class="text-4xl font-black text-slate-900 tracking-tighter">Sales & Success Pipeline</h2>
+                <p class="text-slate-500 font-medium mt-1">Acompanhe a implantação, ativação e retenção dos seus contratos de forma 100% visual.</p>
+            </div>
+            <div class="flex gap-4">
+                <div class="text-[10px] uppercase font-black tracking-widest text-slate-400 bg-slate-100 py-2 px-4 rounded-xl flex items-center gap-2"><i data-lucide="info" class="w-3.5 h-3.5 border-2 rounded-full"></i> Movimentação de Risco Mapeada pelo Asaas</div>
+            </div>
+        </header>
+        
+        <div class="flex gap-6 overflow-x-auto pb-8 items-start snap-x" style="min-height: 550px;">
+            <div v-for="column in crmColumns" :key="column.id" class="flex flex-col bg-slate-50/80 rounded-3xl w-[320px] shrink-0 p-5 border shadow-inner snap-center" :class="column.id === 'risk' ? 'border-rose-100' : 'border-slate-200'" @dragover.prevent @drop="onDrop($event, column.id)">
+                <h3 class="font-black text-slate-800 text-sm mb-5 flex items-center justify-between">
+                    <span class="flex items-center gap-2"><div class="w-2.5 h-2.5 rounded-full shadow-sm" :class="column.color"></div> {{ column.label }}</span>
+                    <span class="bg-white px-2.5 py-1 rounded-lg text-[10px] shadow-sm border border-slate-100 text-slate-500">{{ clients.filter(c => getPipelineStage(c) === column.id).length }}</span>
+                </h3>
+                
+                <div class="flex flex-col gap-4 min-h-[150px]">
+                    <div v-for="c in clients.filter(c => getPipelineStage(c) === column.id)" :key="c.id" 
+                         class="card-glass p-5 bg-white transition-all shadow-sm group relative" 
+                         :class="[getPipelineStage(c) === 'risk' ? 'border-rose-300 shadow-rose-100 bg-rose-50/50' : 'hover:border-indigo-300 hover:shadow-lg hover:shadow-indigo-100/50', (getPipelineStage(c) === 'risk' || getPipelineStage(c) === 'lost') ? 'cursor-not-allowed' : 'cursor-grab active:cursor-grabbing']"
+                         :draggable="getPipelineStage(c) !== 'risk' && getPipelineStage(c) !== 'lost'" 
+                         @dragstart="onDragStart($event, c)">
+                        
+                        <div class="flex items-start gap-4 mb-4">
+                            <div class="w-10 h-10 rounded-2xl text-white flex items-center justify-center font-black text-lg shadow-md shrink-0 transition-transform group-hover:scale-105" :class="column.color">{{ c.name.charAt(0) }}</div>
+                            <div class="flex-1 min-w-0">
+                                <p class="font-black text-sm text-slate-900 truncate leading-tight mt-0.5">{{ c.name }}</p>
+                                <p class="text-[10px] text-slate-400 font-bold uppercase tracking-widest truncate mt-1">{{ c.site_url || 'N/A' }}</p>
+                            </div>
+                        </div>
+                        
+                        <div class="flex items-center justify-between border-t border-slate-100 pt-3">
+                            <span class="text-xs font-black" :class="getPipelineStage(c) === 'risk' ? 'text-rose-600' : 'text-slate-900'">R$ {{ formatMoney(c.mrr) }}</span>
+                            <div class="flex gap-1.5 items-center">
+                                <span v-if="c.status==='inadimplente'" class="text-[9px] uppercase tracking-widest bg-rose-600 text-white px-2 py-1 rounded-[8px] font-black flex items-center gap-1 shadow-md shadow-rose-200" title="Atrasado no Asaas"><i data-lucide="alert-triangle" class="w-3 h-3"></i> Fatura</span>
+                                <span v-if="c.site_status==='blocked'" class="text-[9px] uppercase tracking-widest bg-slate-900 text-white px-2 py-1 rounded-[8px] font-black flex items-center gap-1 shadow-md" title="Site Offline"><i data-lucide="lock" class="w-3 h-3"></i> Trancado</span>
+                                <button v-if="getPipelineStage(c) !== 'risk' && getPipelineStage(c) !== 'lost'" @click.prevent="openEditModal(c)" class="p-1.5 bg-slate-50 hover:bg-slate-200 text-slate-400 hover:text-indigo-600 rounded-[10px] transition-colors" title="Cadastrar Site"><i data-lucide="pencil" class="w-3.5 h-3.5"></i></button>
+                                <button v-if="getPipelineStage(c) === 'risk'" @click="sendWhatsApp($event, c, '15_days_after')" class="p-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-[10px] transition-colors flex items-center shadow-md"><i data-lucide="message-circle" class="w-3.5 h-3.5"></i></button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div v-if="!clients.filter(c => getPipelineStage(c) === column.id).length" class="h-24 border-2 border-dashed border-slate-200 bg-white/50 rounded-2xl flex items-center justify-center text-slate-400 text-[10px] font-black uppercase tracking-widest transition-colors mb-auto">
+                        Arrastar Card
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
   </main>
@@ -801,6 +855,60 @@ html, body, #wpwrap, #wpbody, #wpbody-content, #wpfooter {
         }
       };
 
+      // ── CRM PIPELINE LOGIC ──
+      const crmColumns = ref([
+          { id: 'prospect', label: 'Prospecção (Pre-Setup)', color: 'bg-slate-400' },
+          { id: 'onboarding', label: 'Onboarding (Produção)', color: 'bg-sky-500' },
+          { id: 'ativo', label: 'Cliente Ativo (Saudável)', color: 'bg-emerald-500' },
+          { id: 'risk', label: 'Risco de Churn (Inadimplente)', color: 'bg-rose-500' },
+          { id: 'lost', label: 'Inativo / Bloqueado', color: 'bg-slate-800' }
+      ]);
+
+      const getPipelineStage = (c) => {
+          if (c.site_status === 'blocked') return 'lost';
+          if (c.status === 'inadimplente') return 'risk';
+          return c.pipeline_stage || 'onboarding';
+      };
+
+      const onDragStart = (e, client) => {
+          e.dataTransfer.effectAllowed = 'move';
+          e.dataTransfer.setData('clientId', client.id);
+      };
+
+      const onDrop = async (e, targetStage) => {
+          const clientId = parseInt(e.dataTransfer.getData('clientId'), 10);
+          if (!clientId) return;
+          const client = clients.value.find(c => c.id === clientId);
+          if (!client) return;
+          
+          const currentStage = getPipelineStage(client);
+          
+          if(targetStage === 'risk' || targetStage === 'lost' || currentStage === 'risk' || currentStage === 'lost') {
+              alert("🚀 Movimentação Automática Ativa!\n\nAs Colunas Risco e Inativo são controladas soberanamente pelo Asaas e o Bloqueador de Site. Resolva a fatura e o cliente voltará sozinho.");
+              return;
+          }
+
+          if (currentStage !== targetStage) {
+              const oldStage = client.pipeline_stage;
+              client.pipeline_stage = targetStage; // Optimistic UI
+              nextTick(lucide.createIcons);
+              
+              try {
+                  const res = await fetch(`<?php echo $rest_url; ?>/clients/${clientId}`, {
+                      method: 'PUT',
+                      headers: {'X-WP-Nonce': '<?php echo $rest_nonce; ?>', 'Content-Type': 'application/json'},
+                      body: JSON.stringify({ pipeline_stage: targetStage })
+                  });
+                  if(!res.ok) throw new Error("Falha ao mover card");
+              } catch(err) {
+                  console.error(err);
+                  client.pipeline_stage = oldStage; // Revert
+                  alert("Houve um erro técnico de conexão. O card foi recuado.");
+                  nextTick(lucide.createIcons);
+              }
+          }
+      };
+
       onMounted(() => {
         fetchClients().then(() => {
             syncOverduesSilently();
@@ -815,7 +923,7 @@ html, body, #wpwrap, #wpbody, #wpbody-content, #wpfooter {
           nextTick(lucide.createIcons);
       });
 
-      return { view, clients, loading, search, filterStatus, showModal, showInvoicesModal, invoices, loadingInvoices, asaasBalance, loadingBalance, importing, massBilling, syncingStatus, saving, logs, loadingLogs, metrics, loadingReports, deleteTarget, editTarget, asaasOk, waOk, settingsUrl, form, filteredClients, totalMRR, activeCount, overdueCount, fetchClients, fetchDashboardStats, fetchLogsAndMetrics, importAsaas, massBillOverdue, syncOverduesSilently, saveClient, executeDelete, formatMoney, sendWhatsApp, toggleBlock, syncAsaas, openInvoicesModal, displayMRR, handleMRRInput, displayPhone, handlePhoneInput, formatPhone, openEditModal };
+      return { view, clients, loading, search, filterStatus, showModal, showInvoicesModal, invoices, loadingInvoices, asaasBalance, loadingBalance, importing, massBilling, syncingStatus, saving, logs, loadingLogs, metrics, loadingReports, deleteTarget, editTarget, asaasOk, waOk, settingsUrl, form, filteredClients, totalMRR, activeCount, overdueCount, fetchClients, fetchDashboardStats, fetchLogsAndMetrics, importAsaas, massBillOverdue, syncOverduesSilently, saveClient, executeDelete, formatMoney, sendWhatsApp, toggleBlock, syncAsaas, openInvoicesModal, displayMRR, handleMRRInput, displayPhone, handlePhoneInput, formatPhone, openEditModal, crmColumns, getPipelineStage, onDragStart, onDrop };
     }
   }).mount('#acro-app');
 })();

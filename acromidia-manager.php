@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Acromidia Manager
  * Description: Sistema completo de gestão de assinaturas, integração Asaas e notificações WhatsApp.
- * Version: 1.2.1
+ * Version: 2.0.0
  * Author: Especialista IA
  * Text Domain: acromidia-manager
  */
@@ -339,9 +339,10 @@ class Acromidia_Manager {
             'cpf_cnpj' => '_acro_cpf_cnpj',
             'email'    => '_acro_email',
             'phone'    => '_acro_phone',
-            'mrr'      => '_acro_mrr',
-            'site_url' => '_acro_site_url',
-            'status'   => '_acro_status',
+            'mrr'            => '_acro_mrr',
+            'site_url'       => '_acro_site_url',
+            'status'         => '_acro_status',
+            'pipeline_stage' => '_acro_pipeline_stage',
         ];
 
         foreach ( $meta_map as $param_key => $meta_key ) {
@@ -587,6 +588,7 @@ class Acromidia_Manager {
                 update_post_meta( $post_id, '_acro_mrr', 0 );
                 update_post_meta( $post_id, '_acro_site_url', '' );
                 update_post_meta( $post_id, '_acro_status', 'ativo' );
+                update_post_meta( $post_id, '_acro_pipeline_stage', 'onboarding' );
                 $imported++;
             }
         }
@@ -842,10 +844,11 @@ class Acromidia_Manager {
             'cpf_cnpj'    => get_post_meta( $post->ID, '_acro_cpf_cnpj', true ),
             'email'       => get_post_meta( $post->ID, '_acro_email', true ),
             'phone'       => get_post_meta( $post->ID, '_acro_phone', true ),
-            'mrr'         => get_post_meta( $post->ID, '_acro_mrr', true ),
-            'site_url'    => get_post_meta( $post->ID, '_acro_site_url', true ),
-            'status'      => get_post_meta( $post->ID, '_acro_status', true ) ?: 'ativo',
-            'site_status' => get_post_meta( $post->ID, '_acro_site_status', true ) ?: 'active',
+            'mrr'            => get_post_meta( $post->ID, '_acro_mrr', true ),
+            'site_url'       => get_post_meta( $post->ID, '_acro_site_url', true ),
+            'status'         => get_post_meta( $post->ID, '_acro_status', true ) ?: 'ativo',
+            'site_status'    => get_post_meta( $post->ID, '_acro_site_status', true ) ?: 'active',
+            'pipeline_stage' => get_post_meta( $post->ID, '_acro_pipeline_stage', true ) ?: 'onboarding',
         ];
     }
 }
