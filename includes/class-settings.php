@@ -261,6 +261,67 @@ class Acromidia_Settings {
                     </div>
                 </div>
 
+                <!-- Snippet Manager -->
+                <div class="card-glass overflow-hidden mt-12 mb-12">
+                    <div class="px-10 py-8 border-b border-slate-100 bg-gradient-to-r from-indigo-50 to-white flex items-center justify-between">
+                        <div class="flex items-center gap-6">
+                            <div class="w-16 h-16 bg-gradient-to-tr from-indigo-400 to-indigo-600 rounded-3xl flex items-center justify-center text-white shadow-xl shadow-indigo-200">
+                                <i data-lucide="code" class="w-8 h-8"></i>
+                            </div>
+                            <div>
+                                <h2 class="text-2xl font-black text-slate-900 tracking-tighter">Snippet de Gerenciamento</h2>
+                                <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">Cole no final do functions.php interno dos sites clientes</p>
+                            </div>
+                        </div>
+                        <button type="button" onclick="navigator.clipboard.writeText(document.getElementById('client-snippet').innerText); alert('Copiado para a área de transferência!');" class="p-4 bg-white hover:bg-indigo-50 transition-colors rounded-xl text-indigo-600 flex items-center gap-3 text-[11px] font-black uppercase tracking-widest border border-indigo-200 shadow-sm"><i data-lucide="copy" class="w-4 h-4"></i> Copiar Código</button>
+                    </div>
+                    <div class="p-10 bg-[#0f172a] relative">
+                        <pre id="client-snippet" class="text-[13px] text-emerald-400 font-mono overflow-x-auto m-0 leading-relaxed selection:bg-indigo-500/30">&lt;?php
+/**
+ * Acro Manager - Verificação Universal de Licença e Manutenção
+ * Basta colar no fim do functions.php do Tema do cliente.
+ */
+add_action('template_redirect', 'acro_check_site_status');
+function acro_check_site_status() {
+    $manager_url    = '<?php echo esc_url(site_url()); ?>'; 
+    $cliente_domain = $_SERVER['HTTP_HOST'];
+    
+    // Deleta do Cache se revalidado manualmente com ?revalidar-site=sim na URL
+    if ( isset($_GET['revalidar-site']) ) delete_transient('acro_site_status');
+    
+    $status = get_transient('acro_site_status');
+    
+    if ( false === $status ) {
+        $api_url  = $manager_url . '/wp-json/acromidia/v1/client-site-check?domain=' . urlencode($cliente_domain) . '&z=' . time();
+        $response = wp_remote_get( $api_url, ['timeout' => 5] );
+        
+        if ( ! is_wp_error($response) ) {
+            $body = json_decode( wp_remote_retrieve_body($response), true );
+            $status = isset($body['status']) ? $body['status'] : 'active';
+            set_transient('acro_site_status', $status, 3600); // Salva por 1h
+        } else {
+            $status = 'active'; 
+        }
+    }
+    
+    if ( $status === 'blocked' ) {
+        wp_die(
+            '&lt;div style=&quot;max-width: 600px; margin: 80px auto; text-align: center; font-family: system-ui, sans-serif; color: #1e293b;&quot;&gt;
+                &lt;svg width=&quot;64&quot; height=&quot;64&quot; viewBox=&quot;0 0 24 24&quot; fill=&quot;none&quot; stroke=&quot;#64748b&quot; stroke-width=&quot;2&quot; style=&quot;margin:0 auto 20px auto;&quot;&gt;&lt;circle cx=&quot;12&quot; cy=&quot;12&quot; r=&quot;10&quot;/&gt;&lt;line x1=&quot;12&quot; y1=&quot;8&quot; x2=&quot;12&quot; y2=&quot;12&quot;/&gt;&lt;line x1=&quot;12&quot; y1=&quot;16&quot; x2=&quot;12.01&quot; y2=&quot;16&quot;/&gt;&lt;/svg&gt;
+                &lt;h1 style=&quot;font-size:32px; font-weight:900; margin-bottom: 16px;&quot;&gt;Problemas Técnicos&lt;/h1&gt;
+                &lt;p style=&quot;font-size:16px; color:#64748b; line-height: 1.5;&quot;&gt;Nossos servidores de nuvem estão passando por uma manutenção técnica ou atualização inesperada em uma de nossas centrais. &lt;br&gt;&lt;br&gt;Aguarde, por favor, retornaremos em breve.&lt;/p&gt;
+                &lt;hr style=&quot;margin:40px 0; border:0; border-top:1px solid #e2e8f0;&quot;&gt;
+                &lt;p style=&quot;font-size:11px; font-weight: bold; color:#94a3b8; text-transform:uppercase; letter-spacing:2px;&quot;&gt;Infraestrutura Técnica: &lt;b&gt;AcroMidia&lt;/b&gt;&lt;/p&gt;
+             &lt;/div&gt;',
+            'Manutenção Técnica',
+            ['response' => 503]
+        );
+    }
+}
+?&gt;</pre>
+                    </div>
+                </div>
+
                 <div class="flex flex-col items-center gap-5 pt-8">
                     <button type="submit" class="btn-primary max-w-md mx-auto">
                         <i data-lucide="lock" class="w-5 h-5"></i> Criptografar e Salvar Tudo
