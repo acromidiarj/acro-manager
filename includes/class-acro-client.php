@@ -49,7 +49,7 @@ if (!class_exists('LicenseClient')) {
 
             add_filter('pre_set_site_transient_update_plugins', [$this, 'check_update']);
             add_filter('plugins_api', [$this, 'check_info'], 10, 3);
-            add_action('admin_menu', [$this, 'add_settings_page']);
+            add_action('admin_menu', [$this, 'add_settings_page'], 99);
             add_action('admin_init', [$this, 'register_settings']);
             add_filter('plugin_action_links_' . $this->plugin_slug, [$this, 'add_action_links']);
             add_action('admin_post_acro_activate_' . $this->slug, [$this, 'handle_activation']);
