@@ -33,6 +33,15 @@ class Acromidia_Settings {
             'placeholder' => 'Token para validação dos webhooks',
             'help'        => 'Configure ao criar o webhook no painel Asaas',
         ],
+        'asaas_mode'          => [
+            'label'       => 'Ambiente Asaas',
+            'type'        => 'select',
+            'options'     => [
+                'prod'    => 'Produção (Real)',
+                'sandbox' => 'Sandbox (Testes)',
+            ],
+            'help'        => 'Sandbox usa contas de teste e faturas fictícias.',
+        ],
         'mp_access_token'     => [
             'label'       => 'Access Token Mercado Pago',
             'placeholder' => 'APP_USR-...',
@@ -148,6 +157,31 @@ class Acromidia_Settings {
     // ───────────────────────────────────
 
     public function handle_save() {
+        if ( isset( $_GET['disconnect'] ) && isset( $_GET['_wpnonce'] ) ) {
+            $gateway = sanitize_text_field( $_GET['disconnect'] );
+            if ( wp_verify_nonce( $_GET['_wpnonce'], 'disconnect_' . $gateway ) && current_user_can( 'manage_options' ) ) {
+                $options = get_option( self::OPTION_KEY, [] );
+                
+                $gateway_fields = [
+                    'asaas'       => ['asaas_api_key', 'asaas_webhook_token'],
+                    'mercadopago' => ['mp_access_token', 'mp_webhook_secret'],
+                    'stripe'      => ['stripe_api_key', 'stripe_webhook_secret'],
+                    'pagarme'     => ['pagarme_api_key', 'pagarme_webhook_secret'],
+                    'pagbank'     => ['pagbank_api_key', 'pagbank_webhook_secret'],
+                    'whatsapp'    => ['wa_token', 'wa_phone_id']
+                ];
+
+                if ( isset( $gateway_fields[$gateway] ) ) {
+                    foreach ( $gateway_fields[$gateway] as $field ) {
+                        unset( $options[$field] );
+                    }
+                    update_option( self::OPTION_KEY, $options );
+                    wp_redirect( admin_url( 'admin.php?page=acromidia-settings&disconnected=1' ) );
+                    exit;
+                }
+            }
+        }
+
         if ( ! isset( $_POST['acromidia_settings_nonce'] ) ) {
             return;
         }
@@ -190,8 +224,9 @@ class Acromidia_Settings {
     // ───────────────────────────────────
 
     public function render_page() {
-        $saved     = isset( $_GET['saved'] );
-        $dash_url  = admin_url( 'admin.php?page=acromidia-dashboard' );
+        $saved        = isset( $_GET['saved'] );
+        $disconnected = isset( $_GET['disconnected'] );
+        $dash_url     = admin_url( 'admin.php?page=acromidia-dashboard' );
         ?>
         <link href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,400;0,14..32,500;0,14..32,600;0,14..32,700;0,14..32,800&display=swap" rel="stylesheet">
         <script src="https://cdn.tailwindcss.com"></script>
@@ -257,6 +292,16 @@ class Acromidia_Settings {
                 </div>
             <?php endif; ?>
 
+            <?php if ( $disconnected ) : ?>
+                <div class="mb-12 p-6 bg-amber-50 border-amber-500 border-l-4 rounded-xl flex items-center gap-5 animate-in fade-in slide-in-from-top-4 duration-500 shadow-sm">
+                    <div class="w-12 h-12 bg-amber-500 text-white rounded-full flex items-center justify-center shadow-lg shadow-amber-200"><i data-lucide="trash-2" class="w-6 h-6"></i></div>
+                    <div>
+                        <p class="font-black text-slate-900 text-lg tracking-tighter">Integração Removida</p>
+                        <p class="font-bold text-slate-500 text-sm mt-0.5">As credenciais foram desconectadas e excluídas do banco de dados.</p>
+                    </div>
+                </div>
+            <?php endif; ?>
+
             <form method="POST" class="relative">
                 <?php wp_nonce_field( 'acromidia_save_settings', 'acromidia_settings_nonce' ); ?>
 
@@ -300,12 +345,16 @@ class Acromidia_Settings {
                             </div>
                         </div>
                         <?php if ( self::has('asaas_api_key') ) : ?>
-                            <span class="px-4 py-2 bg-emerald-50 text-emerald-600 text-[10px] font-black rounded-full border border-emerald-200 uppercase tracking-[0.2em] flex items-center gap-2 shadow-sm"><i data-lucide="zap" class="w-3 h-3 text-emerald-500"></i> Integrado</span>
+                            <div class="flex flex-col items-end gap-2">
+                                <span class="px-4 py-2 bg-emerald-50 text-emerald-600 text-[10px] font-black rounded-full border border-emerald-200 uppercase tracking-[0.2em] flex items-center gap-2 shadow-sm"><i data-lucide="zap" class="w-3 h-3 text-emerald-500"></i> Integrado</span>
+                                <a href="<?php echo esc_url( wp_nonce_url( admin_url('admin.php?page=acromidia-settings&disconnect=asaas'), 'disconnect_asaas' ) ); ?>" onclick="return confirm('Tem certeza que deseja desconectar esta integração? As chaves serão apagadas do banco de dados.')" class="text-[10px] text-red-500 hover:text-red-700 font-bold uppercase tracking-[0.1em] flex items-center gap-1 transition-colors mt-1"><i data-lucide="trash-2" class="w-3 h-3"></i> Desconectar</a>
+                            </div>
                         <?php endif; ?>
                     </div>
                     <div class="p-10 space-y-8 bg-white">
                         <?php self::render_field( 'asaas_api_key', 'key' ); ?>
                         <?php self::render_field( 'asaas_webhook_token', 'link' ); ?>
+                        <?php self::render_field( 'asaas_mode', 'monitor' ); ?>
                         
                         <div class="pt-6 border-t border-slate-100">
                             <label class="input-label mb-3">URL do Webhook (Copie para o painel Asaas)</label>
@@ -329,7 +378,10 @@ class Acromidia_Settings {
                             </div>
                         </div>
                         <?php if ( self::has('mp_access_token') ) : ?>
-                            <span class="px-4 py-2 bg-emerald-50 text-emerald-600 text-[10px] font-black rounded-full border border-emerald-200 uppercase tracking-[0.2em] flex items-center gap-2 shadow-sm"><i data-lucide="zap" class="w-3 h-3 text-emerald-500"></i> Integrado</span>
+                            <div class="flex flex-col items-end gap-2">
+                                <span class="px-4 py-2 bg-emerald-50 text-emerald-600 text-[10px] font-black rounded-full border border-emerald-200 uppercase tracking-[0.2em] flex items-center gap-2 shadow-sm"><i data-lucide="zap" class="w-3 h-3 text-emerald-500"></i> Integrado</span>
+                                <a href="<?php echo esc_url( wp_nonce_url( admin_url('admin.php?page=acromidia-settings&disconnect=mercadopago'), 'disconnect_mercadopago' ) ); ?>" onclick="return confirm('Tem certeza que deseja desconectar esta integração? As chaves serão apagadas do banco de dados.')" class="text-[10px] text-red-500 hover:text-red-700 font-bold uppercase tracking-[0.1em] flex items-center gap-1 transition-colors mt-1"><i data-lucide="trash-2" class="w-3 h-3"></i> Desconectar</a>
+                            </div>
                         <?php endif; ?>
                     </div>
                     <div class="p-10 space-y-8 bg-white">
@@ -357,7 +409,10 @@ class Acromidia_Settings {
                             </div>
                         </div>
                         <?php if ( self::has('stripe_api_key') ) : ?>
-                            <span class="px-4 py-2 bg-emerald-50 text-emerald-600 text-[10px] font-black rounded-full border border-emerald-200 uppercase tracking-[0.2em] flex items-center gap-2 shadow-sm"><i data-lucide="zap" class="w-3 h-3 text-emerald-500"></i> Integrado</span>
+                            <div class="flex flex-col items-end gap-2">
+                                <span class="px-4 py-2 bg-emerald-50 text-emerald-600 text-[10px] font-black rounded-full border border-emerald-200 uppercase tracking-[0.2em] flex items-center gap-2 shadow-sm"><i data-lucide="zap" class="w-3 h-3 text-emerald-500"></i> Integrado</span>
+                                <a href="<?php echo esc_url( wp_nonce_url( admin_url('admin.php?page=acromidia-settings&disconnect=stripe'), 'disconnect_stripe' ) ); ?>" onclick="return confirm('Tem certeza que deseja desconectar esta integração? As chaves serão apagadas do banco de dados.')" class="text-[10px] text-red-500 hover:text-red-700 font-bold uppercase tracking-[0.1em] flex items-center gap-1 transition-colors mt-1"><i data-lucide="trash-2" class="w-3 h-3"></i> Desconectar</a>
+                            </div>
                         <?php endif; ?>
                     </div>
                     <div class="p-10 space-y-8 bg-white">
@@ -385,7 +440,10 @@ class Acromidia_Settings {
                             </div>
                         </div>
                         <?php if ( self::has('pagarme_api_key') ) : ?>
-                            <span class="px-4 py-2 bg-emerald-50 text-emerald-600 text-[10px] font-black rounded-full border border-emerald-200 uppercase tracking-[0.2em] flex items-center gap-2 shadow-sm"><i data-lucide="zap" class="w-3 h-3 text-emerald-500"></i> Integrado</span>
+                            <div class="flex flex-col items-end gap-2">
+                                <span class="px-4 py-2 bg-emerald-50 text-emerald-600 text-[10px] font-black rounded-full border border-emerald-200 uppercase tracking-[0.2em] flex items-center gap-2 shadow-sm"><i data-lucide="zap" class="w-3 h-3 text-emerald-500"></i> Integrado</span>
+                                <a href="<?php echo esc_url( wp_nonce_url( admin_url('admin.php?page=acromidia-settings&disconnect=pagarme'), 'disconnect_pagarme' ) ); ?>" onclick="return confirm('Tem certeza que deseja desconectar esta integração? As chaves serão apagadas do banco de dados.')" class="text-[10px] text-red-500 hover:text-red-700 font-bold uppercase tracking-[0.1em] flex items-center gap-1 transition-colors mt-1"><i data-lucide="trash-2" class="w-3 h-3"></i> Desconectar</a>
+                            </div>
                         <?php endif; ?>
                     </div>
                     <div class="p-10 space-y-8 bg-white">
@@ -413,7 +471,10 @@ class Acromidia_Settings {
                             </div>
                         </div>
                         <?php if ( self::has('pagbank_api_key') ) : ?>
-                            <span class="px-4 py-2 bg-emerald-50 text-emerald-600 text-[10px] font-black rounded-full border border-emerald-200 uppercase tracking-[0.2em] flex items-center gap-2 shadow-sm"><i data-lucide="zap" class="w-3 h-3 text-emerald-500"></i> Integrado</span>
+                            <div class="flex flex-col items-end gap-2">
+                                <span class="px-4 py-2 bg-emerald-50 text-emerald-600 text-[10px] font-black rounded-full border border-emerald-200 uppercase tracking-[0.2em] flex items-center gap-2 shadow-sm"><i data-lucide="zap" class="w-3 h-3 text-emerald-500"></i> Integrado</span>
+                                <a href="<?php echo esc_url( wp_nonce_url( admin_url('admin.php?page=acromidia-settings&disconnect=pagbank'), 'disconnect_pagbank' ) ); ?>" onclick="return confirm('Tem certeza que deseja desconectar esta integração? As chaves serão apagadas do banco de dados.')" class="text-[10px] text-red-500 hover:text-red-700 font-bold uppercase tracking-[0.1em] flex items-center gap-1 transition-colors mt-1"><i data-lucide="trash-2" class="w-3 h-3"></i> Desconectar</a>
+                            </div>
                         <?php endif; ?>
                     </div>
                     <div class="p-10 space-y-8 bg-white">
@@ -447,7 +508,10 @@ class Acromidia_Settings {
                             </div>
                         </div>
                         <?php if ( self::has('wa_token') ) : ?>
-                            <span class="px-4 py-2 bg-emerald-50 text-emerald-600 text-[10px] font-black rounded-full border border-emerald-200 uppercase tracking-[0.2em] flex items-center gap-2 shadow-sm"><i data-lucide="zap" class="w-3 h-3 text-emerald-500"></i> Conectado</span>
+                            <div class="flex flex-col items-end gap-2">
+                                <span class="px-4 py-2 bg-emerald-50 text-emerald-600 text-[10px] font-black rounded-full border border-emerald-200 uppercase tracking-[0.2em] flex items-center gap-2 shadow-sm"><i data-lucide="zap" class="w-3 h-3 text-emerald-500"></i> Conectado</span>
+                                <a href="<?php echo esc_url( wp_nonce_url( admin_url('admin.php?page=acromidia-settings&disconnect=whatsapp'), 'disconnect_whatsapp' ) ); ?>" onclick="return confirm('Tem certeza que deseja desconectar esta integração? O acesso a API será revogado.')" class="text-[10px] text-red-500 hover:text-red-700 font-bold uppercase tracking-[0.1em] flex items-center gap-1 transition-colors mt-1"><i data-lucide="trash-2" class="w-3 h-3"></i> Desconectar</a>
+                            </div>
                         <?php endif; ?>
                     </div>
                     <div class="p-10 space-y-8 bg-white">

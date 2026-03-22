@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Acromidia Manager
  * Description: Sistema completo de gestão de assinaturas, integração Asaas e notificações WhatsApp.
- * Version: 3.0.1
+ * Version: 3.0.2
  * Author: Especialista IA
  * Text Domain: acromidia-manager
  */
@@ -504,7 +504,17 @@ class Acromidia_Manager {
         $asaas  = new Acromidia_Asaas_API();
         $result = $asaas->create_customer( $name, $cpf_cnpj, $email, $phone );
 
+        // Se falhou por duplicidade ou erro, tenta buscar por CPF/CNPJ
         if ( ! empty( $result['error'] ) || empty( $result['id'] ) ) {
+            if ( ! empty( $cpf_cnpj ) ) {
+                $search = $asaas->request( '/customers?cpfCnpj=' . preg_replace( '/\D/', '', $cpf_cnpj ) );
+                if ( ! empty( $search['data'][0]['id'] ) ) {
+                    $result = $search['data'][0];
+                }
+            }
+        }
+
+        if ( empty( $result['id'] ) ) {
             $msg = $result['message'] ?? $result['errors'][0]['description'] ?? 'Erro desconhecido do Asaas';
             return new \WP_REST_Response( [ 'error' => "Asaas: {$msg}" ], 400 );
         }
@@ -883,7 +893,7 @@ class Acromidia_Manager {
         return [
             'id'          => $post->ID,
             'name'        => $post->post_title,
-            'asaas_id'    => get_post_meta( $post->ID, '_acro_asaas_id', true ),
+            'asaas_id'    => get_post_meta( $post->ID, '_acro_gateway_customer_id', true ),
             'cpf_cnpj'    => get_post_meta( $post->ID, '_acro_cpf_cnpj', true ),
             'email'       => get_post_meta( $post->ID, '_acro_email', true ),
             'phone'       => get_post_meta( $post->ID, '_acro_phone', true ),

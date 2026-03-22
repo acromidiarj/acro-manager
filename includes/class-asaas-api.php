@@ -7,7 +7,8 @@ class Acromidia_Asaas_API implements Acromidia_Gateway_Interface {
 
     public function __construct() {
         $this->api_key  = Acromidia_Settings::get( 'asaas_api_key' );
-        $this->base_url = 'https://api.asaas.com/v3';
+        $mode           = Acromidia_Settings::get( 'asaas_mode' );
+        $this->base_url = ( $mode === 'sandbox' ) ? 'https://sandbox.asaas.com/api/v3' : 'https://api.asaas.com/v3';
     }
 
     public function request( $endpoint, $method = 'GET', $body = [] ) {
@@ -32,8 +33,16 @@ class Acromidia_Asaas_API implements Acromidia_Gateway_Interface {
             return [ 'error' => true, 'message' => $response->get_error_message() ];
         }
 
-        $body = wp_remote_retrieve_body( $response );
-        return json_decode( $body, true );
+        $response_code = wp_remote_retrieve_response_code( $response );
+        $body          = wp_remote_retrieve_body( $response );
+        $data          = json_decode( $body, true );
+
+        if ( $response_code >= 400 || is_null( $data ) ) {
+            error_log( "AcroManager - Erro na API Asaas ($response_code): " . $body );
+            return [ 'error' => true, 'message' => "Erro HTTP $response_code", 'raw' => $body ];
+        }
+
+        return $data;
     }
 
     public function create_customer( $name, $cpfCnpj, $email, $phone ) {
