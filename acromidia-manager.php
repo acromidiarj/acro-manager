@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Acromidia Manager
  * Description: Sistema completo de gestão de assinaturas, integração Asaas e notificações WhatsApp.
- * Version: 3.0.3
+ * Version: 4.0.0
  * Author: Especialista IA
  * Text Domain: acromidia-manager
  */
@@ -34,6 +34,9 @@ class Acromidia_Manager {
         if ( ! wp_next_scheduled( 'acromidia_daily_billing' ) ) {
             wp_schedule_event( time(), 'daily', 'acromidia_daily_billing' );
         }
+
+        // Template para documentos públicos
+        add_filter( 'template_include', [ $this, 'render_document_template' ] );
     }
 
     // ───────────────────────────────────
@@ -71,6 +74,41 @@ class Acromidia_Manager {
             'public'       => false,
             'supports'     => [ 'title', 'editor' ],
             'show_in_rest' => false,
+        ] );
+
+        // CPT para Transações (Fluxo de Caixa)
+        register_post_type( 'acro_transaction', [
+            'labels'       => [ 'name' => 'Financeiro', 'singular_name' => 'Transação' ],
+            'public'       => false,
+            'supports'     => [ 'title', 'custom-fields' ],
+            'show_in_rest' => true,
+        ] );
+
+        // CPT para Documentos (Orçamentos e Contratos)
+        register_post_type( 'acro_document', [
+            'labels'       => [ 'name' => 'Documentos', 'singular_name' => 'Documento' ],
+            'public'             => true,
+            'publicly_queryable' => true,
+            'show_ui'            => true,
+            'has_archive'        => false,
+            'query_var'          => true,
+            'rewrite'            => [ 'slug' => 'proposta', 'with_front' => false ],
+            'supports'           => [ 'title' ],
+            'show_in_rest'       => true,
+        ] );
+
+        // Force refresh of rewrite rules on first load after this update
+        if ( ! get_option( 'acro_v4_flush_rewrite' ) ) {
+            flush_rewrite_rules( true );
+            update_option( 'acro_v4_flush_rewrite', true );
+        }
+
+        // CPT para Tarefas (Gestão de Projetos / Kanban)
+        register_post_type( 'acro_task', [
+            'labels'       => [ 'name' => 'Tarefas', 'singular_name' => 'Tarefa' ],
+            'public'       => false,
+            'supports'     => [ 'title', 'editor', 'custom-fields' ],
+            'show_in_rest' => true,
         ] );
     }
 
@@ -219,6 +257,12 @@ class Acromidia_Manager {
             'permission_callback' => $admin_perm,
         ] );
 
+        register_rest_route( 'acromidia/v1', '/metrics/commercial', [
+            'methods'             => 'GET',
+            'callback'            => [ $this, 'get_metrics_commercial' ],
+            'permission_callback' => $admin_perm,
+        ] );
+
         // GET — Histórico de Disparos/Logs (Ideia C)
         register_rest_route( 'acromidia/v1', '/logs', [
             'methods'             => 'GET',
@@ -238,6 +282,112 @@ class Acromidia_Manager {
             'methods'             => 'GET',
             'callback'            => [ $this, 'check_public_site_status' ],
             'permission_callback' => '__return_true', // Sem Autenticação API propositalmente
+        ] );
+
+        // --- FLUXO DE CAIXA ---
+        register_rest_route( 'acromidia/v1', '/finance/transactions', [
+            'methods'             => 'GET',
+            'callback'            => [ $this, 'get_transactions' ],
+            'permission_callback' => $admin_perm,
+        ] );
+
+        register_rest_route( 'acromidia/v1', '/finance/transactions', [
+            'methods'             => 'POST',
+            'callback'            => [ $this, 'create_transaction' ],
+            'permission_callback' => $admin_perm,
+        ] );
+
+        register_rest_route( 'acromidia/v1', '/finance/transactions/(?P<id>\d+)', [
+            'methods'             => 'PUT',
+            'callback'            => [ $this, 'update_transaction' ],
+            'permission_callback' => $admin_perm,
+        ] );
+
+        register_rest_route( 'acromidia/v1', '/finance/transactions/(?P<id>\d+)', [
+            'methods'             => 'DELETE',
+            'callback'            => [ $this, 'delete_transaction' ],
+            'permission_callback' => $admin_perm,
+        ] );
+
+        // --- CATEGORIAS FINANCEIRAS PERSONALIZADAS ---
+        register_rest_route( 'acromidia/v1', '/finance/categories', [
+            'methods'             => 'GET',
+            'callback'            => [ $this, 'get_finance_categories' ],
+            'permission_callback' => $admin_perm,
+        ] );
+
+        register_rest_route( 'acromidia/v1', '/finance/categories', [
+            'methods'             => 'POST',
+            'callback'            => [ $this, 'save_finance_categories' ],
+            'permission_callback' => $admin_perm,
+        ] );
+
+        // --- ORÇAMENTOS E CONTRATOS ---
+        register_rest_route( 'acromidia/v1', '/documents', [
+            'methods'             => 'GET',
+            'callback'            => [ $this, 'get_documents' ],
+            'permission_callback' => $admin_perm,
+        ] );
+
+        register_rest_route( 'acromidia/v1', '/documents', [
+            'methods'             => 'POST',
+            'callback'            => [ $this, 'create_document' ],
+            'permission_callback' => $admin_perm,
+        ] );
+
+        register_rest_route( 'acromidia/v1', '/documents/(?P<id>\d+)', [
+            'methods'             => 'DELETE',
+            'callback'            => [ $this, 'delete_document' ],
+            'permission_callback' => $admin_perm,
+        ] );
+
+        register_rest_route( 'acromidia/v1', '/documents/(?P<id>\d+)', [
+            'methods'             => 'PUT',
+            'callback'            => [ $this, 'update_document' ],
+            'permission_callback' => $admin_perm,
+        ] );
+
+        register_rest_route( 'acromidia/v1', '/documents/(?P<id>\d+)/whatsapp', [
+            'methods'             => 'POST',
+            'callback'            => [ $this, 'send_document_whatsapp' ],
+            'permission_callback' => $admin_perm,
+        ] );
+
+        register_rest_route( 'acromidia/v1', '/documents/(?P<id>\d+)/accept', [
+            'methods'             => 'POST',
+            'callback'            => [ $this, 'accept_document' ],
+            'permission_callback' => $admin_perm,
+        ] );
+
+        register_rest_route( 'acromidia/v1', '/documents/(?P<id>\d+)/revert', [
+            'methods'             => 'POST',
+            'callback'            => [ $this, 'revert_document' ],
+            'permission_callback' => $admin_perm,
+        ] );
+
+        // --- GESTÃO DE TAREFAS (KANBAN) ---
+        register_rest_route( 'acromidia/v1', '/tasks', [
+            'methods'             => 'GET',
+            'callback'            => [ $this, 'get_tasks' ],
+            'permission_callback' => $admin_perm,
+        ] );
+
+        register_rest_route( 'acromidia/v1', '/tasks', [
+            'methods'             => 'POST',
+            'callback'            => [ $this, 'create_task' ],
+            'permission_callback' => $admin_perm,
+        ] );
+
+        register_rest_route( 'acromidia/v1', '/tasks/(?P<id>\d+)', [
+            'methods'             => 'PUT', // Para atualizar status (move card)
+            'callback'            => [ $this, 'update_task' ],
+            'permission_callback' => $admin_perm,
+        ] );
+
+        register_rest_route( 'acromidia/v1', '/tasks/(?P<id>\d+)', [
+            'methods'             => 'DELETE',
+            'callback'            => [ $this, 'delete_task' ],
+            'permission_callback' => $admin_perm,
         ] );
     }
 
@@ -593,14 +743,15 @@ class Acromidia_Manager {
      */
     public function import_asaas_clients( \WP_REST_Request $request ) {
         if ( ! Acromidia_Gateway_Factory::is_configured() ) {
-            return new \WP_REST_Response( [ 'error' => 'API Asaas não configurada' ], 400 );
+            return new \WP_REST_Response( [ 'error' => 'Configurações de API não encontradas.' ], 400 );
         }
         
-        $asaas = new Acromidia_Asaas_API();
-        $customers = $asaas->list_customers( 100 );
+        $gateway = Acromidia_Gateway_Factory::get_engine();
+        $primary_id = Acromidia_Settings::get( 'primary_gateway' ) ?: 'asaas';
+        $customers  = $gateway->list_customers( 100 );
         
         if ( isset( $customers['error'] ) && $customers['error'] ) {
-             return new \WP_REST_Response( [ 'error' => 'Erro ao buscar no Asaas: ' . ($customers['message']??'') ], 400 );
+             return new \WP_REST_Response( [ 'error' => 'Erro ao buscar no ' . ucfirst($primary_id) . ': ' . ($customers['message']??'') ], 400 );
         }
         
         $imported = 0;
@@ -645,8 +796,26 @@ class Acromidia_Manager {
                 $imported++;
             }
         }
+
+        // --- Sincroniza pagamentos confirmados recentes como Receitas no Financeiro ---
+        $synced_finance = 0;
+        if ( Acromidia_Gateway_Factory::is_configured() ) {
+            $gateway = Acromidia_Gateway_Factory::get_engine();
+            $recent_paid = $gateway->request("/payments?status=RECEIVED&offset=0&limit=50") ?: [];
+            if ( ! empty( $recent_paid['data'] ) ) {
+                foreach ( $recent_paid['data'] as $pay ) {
+                    if ( $this->sync_payment_as_income( $pay ) ) {
+                        $synced_finance++;
+                    }
+                }
+            }
+        }
         
-        return rest_ensure_response( [ 'success' => true, 'imported' => $imported ] );
+        return rest_ensure_response( [ 
+            'success' => true, 
+            'imported' => $imported, 
+            'finance_synced' => $synced_finance 
+        ] );
     }
 
     /**
@@ -702,7 +871,62 @@ class Acromidia_Manager {
                 }
             }
         }
-        return rest_ensure_response( [ 'success' => true, 'updated' => $updated ] );
+
+        // --- NOVO: Sincroniza pagamentos confirmados recentes como Receitas no Financeiro ---
+        $recent_paid = $gateway->request("/payments?status=RECEIVED&offset=0&limit=50") ?: [];
+        $synced_finance = 0;
+        if ( ! empty( $recent_paid['data'] ) ) {
+            foreach ( $recent_paid['data'] as $pay ) {
+                if ( $this->sync_payment_as_income( $pay ) ) {
+                    $synced_finance++;
+                }
+            }
+        }
+
+        return rest_ensure_response( [ 
+            'success' => true, 
+            'updated' => $updated, 
+            'finance_synced' => $synced_finance 
+        ] );
+    }
+
+    /**
+     * Auxiliar: Converte um pagamento do Asaas em Transação Financeira
+     * Evita duplicatas conferindo o ID da fatura.
+     */
+    public function sync_payment_as_income( $payment ) {
+        $payment_id = $payment['id'] ?? '';
+        if ( empty($payment_id) ) return false;
+
+        $existing = get_posts([
+            'post_type'  => 'acro_transaction',
+            'meta_key'   => '_acro_asaas_id',
+            'meta_value' => $payment_id,
+            'posts_per_page' => 1,
+            'post_status' => 'publish'
+        ]);
+
+        if ( ! empty($existing) ) return false;
+
+        $desc = !empty($payment['description']) ? $payment['description'] : "Recebimento Asaas #{$payment_id}";
+        
+        $trans_id = wp_insert_post([
+            'post_type'   => 'acro_transaction',
+            'post_title'  => sanitize_text_field($desc),
+            'post_status' => 'publish'
+        ]);
+
+        if ( ! is_wp_error($trans_id) ) {
+            update_post_meta($trans_id, '_acro_amount', floatval($payment['value'] ?? 0));
+            update_post_meta($trans_id, '_acro_type', 'income'); // Sempre entrada
+            update_post_meta($trans_id, '_acro_category', 'Vendas');
+            
+            $pay_date = $payment['confirmedDate'] ?? $payment['paymentDate'] ?? current_time('Y-m-d');
+            update_post_meta($trans_id, '_acro_date', sanitize_text_field($pay_date));
+            update_post_meta($trans_id, '_acro_asaas_id', $payment_id);
+            return true;
+        }
+        return false;
     }
 
     // ───────────────────────────────────
@@ -817,6 +1041,58 @@ class Acromidia_Manager {
         ] );
     }
 
+    /**
+     * MÉTRICAS: Desempenho Comercial (Propostas)
+     */
+    public function get_metrics_commercial( \WP_REST_Request $request ) {
+        $args = [
+            'post_type'      => 'acro_document',
+            'posts_per_page' => -1,
+            'post_status'    => 'publish',
+            'date_query'     => [
+                [
+                    'after' => '30 days ago',
+                    'inclusive' => true,
+                ],
+            ],
+        ];
+
+        $docs = get_posts($args);
+        
+        $stats = [
+            'total'      => count($docs),
+            'accepted'   => 0,
+            'pending'    => 0,
+            'rejected'   => 0,
+            'revenue'    => 0,
+            'opportunity'=> 0,
+            'avg_ticket' => 0
+        ];
+
+        foreach ($docs as $d) {
+            $status = get_post_meta($d->ID, '_acro_status', true) ?: 'pendente';
+            $total  = floatval(get_post_meta($d->ID, '_acro_total', true));
+
+            if ($status === 'aceito') {
+                $stats['accepted']++;
+                $stats['revenue'] += $total;
+            } else if ($status === 'pendente') {
+                $stats['pending']++;
+                $stats['opportunity'] += $total;
+            } else {
+                $stats['rejected']++;
+            }
+        }
+
+        if ($stats['accepted'] > 0) {
+            $stats['avg_ticket'] = $stats['revenue'] / $stats['accepted'];
+        }
+
+        $stats['conversion_rate'] = $stats['total'] > 0 ? ($stats['accepted'] / $stats['total']) * 100 : 0;
+
+        return rest_ensure_response($stats);
+    }
+
     public function toggle_client_block( \WP_REST_Request $request ) {
         $client_id = $request->get_param( 'id' );
         $client = get_post( $client_id );
@@ -885,9 +1161,434 @@ class Acromidia_Manager {
         return rest_ensure_response( $list );
     }
 
+    /**
+     * FINANCEIRO: Listar Transações
+     */
+    public function get_transactions() {
+        $posts = get_posts([
+            'post_type'      => 'acro_transaction',
+            'posts_per_page' => 100,
+            'post_status'    => 'publish',
+            'orderby'        => 'date',
+            'order'          => 'DESC'
+        ]);
+
+        $data = [];
+        foreach($posts as $p) {
+            $data[] = $this->format_transaction($p);
+        }
+        return rest_ensure_response($data);
+    }
+
+    /**
+     * FINANCEIRO: Criar Transação
+     */
+    public function create_transaction( \WP_REST_Request $request ) {
+        $params = $request->get_json_params();
+        $title = $params['description'] ?? 'Sem descrição';
+        $p_id = wp_insert_post([
+            'post_type'   => 'acro_transaction',
+            'post_title'  => sanitize_text_field($title),
+            'post_status' => 'publish'
+        ]);
+
+        if(is_wp_error($p_id)) return new \WP_REST_Response(['error' => 'Falha ao criar'], 500);
+
+        update_post_meta($p_id, '_acro_amount', floatval($params['amount'] ?? 0));
+        update_post_meta($p_id, '_acro_type', sanitize_text_field($params['type'] ?? 'income')); // income / expense
+        update_post_meta($p_id, '_acro_category', sanitize_text_field($params['category'] ?? 'Outros'));
+        update_post_meta($p_id, '_acro_date', sanitize_text_field($params['date'] ?? current_time('Y-m-d')));
+        update_post_meta($p_id, '_acro_status', sanitize_text_field($params['status'] ?? 'pago'));
+        update_post_meta($p_id, '_acro_recurring', !empty($params['recurring']) ? 1 : 0);
+
+        return rest_ensure_response($this->format_transaction(get_post($p_id)));
+    }
+
+    /**
+     * FINANCEIRO: Atualizar Transação
+     */
+    public function update_transaction( \WP_REST_Request $request ) {
+        $id = $request->get_param('id');
+        $params = $request->get_json_params();
+        
+        $post_data = [
+            'ID' => $id,
+        ];
+
+        if ( isset($params['description']) ) {
+            $post_data['post_title'] = sanitize_text_field($params['description']);
+        }
+
+        wp_update_post($post_data);
+
+        if ( isset($params['amount']) ) update_post_meta($id, '_acro_amount', floatval($params['amount']));
+        if ( isset($params['type']) ) update_post_meta($id, '_acro_type', sanitize_text_field($params['type']));
+        if ( isset($params['category']) ) update_post_meta($id, '_acro_category', sanitize_text_field($params['category']));
+        if ( isset($params['date']) ) update_post_meta($id, '_acro_date', sanitize_text_field($params['date']));
+        if ( isset($params['status']) ) update_post_meta($id, '_acro_status', sanitize_text_field($params['status']));
+        if ( isset($params['recurring']) ) update_post_meta($id, '_acro_recurring', !empty($params['recurring']) ? 1 : 0);
+
+        return rest_ensure_response($this->format_transaction(get_post($id)));
+    }
+
+    /**
+     * FINANCEIRO: Excluir
+     */
+    public function delete_transaction( \WP_REST_Request $request ) {
+        $id = $request->get_param('id');
+        wp_delete_post($id, true);
+        return rest_ensure_response(['success' => true]);
+    }
+
+    /**
+     * CATEGORIAS FINANCEIRAS: Listar
+     */
+    private function get_default_finance_categories() {
+        return [
+            'Vendas',
+            'Infraestrutura',
+            'Marketing',
+            'Pessoal',
+            'Retirada',
+            'Variáveis',
+        ];
+    }
+
+    public function get_finance_categories() {
+        $custom = get_option('_acro_finance_categories', null);
+        
+        // Se nunca foi mexido, retorna os padrões.
+        // Se o usuário limpou tudo, retorna array vazio (agente permite controle total).
+        if ($custom === null) {
+            $all = $this->get_default_finance_categories();
+        } else {
+            $all = (array) $custom;
+        }
+
+        return rest_ensure_response(['categories' => array_values(array_unique($all))]);
+    }
+
+    /**
+     * CATEGORIAS FINANCEIRAS: Salvar
+     */
+    public function save_finance_categories( \WP_REST_Request $request ) {
+        $params = $request->get_json_params();
+        $categories = $params['categories'] ?? [];
+
+        // Sanitiza a lista completa enviada pelo usuário
+        $sanitized = array_values(array_filter(
+            array_map('sanitize_text_field', (array) $categories),
+            fn($c) => strlen($c) > 1
+        ));
+
+        update_option('_acro_finance_categories', $sanitized);
+
+        return rest_ensure_response([
+            'success' => true, 
+            'categories' => $sanitized
+        ]);
+    }
+
+    private function format_transaction($post) {
+        return [
+            'id'          => $post->ID,
+            'description' => $post->post_title,
+            'amount'      => get_post_meta($post->ID, '_acro_amount', true),
+            'type'        => get_post_meta($post->ID, '_acro_type', true),
+            'category'    => get_post_meta($post->ID, '_acro_category', true),
+            'date'        => get_post_meta($post->ID, '_acro_date', true),
+            'status'      => get_post_meta($post->ID, '_acro_status', true) ?: 'pago',
+            'recurring'   => (int)get_post_meta($post->ID, '_acro_recurring', true) === 1,
+            'human_date'  => date('d/m/Y', strtotime(get_post_meta($post->ID, '_acro_date', true)))
+        ];
+    }
+
+    /**
+     * DOCUMENTOS: Listar Orçamentos/Contratos
+     */
+    public function get_documents() {
+        $posts = get_posts([
+            'post_type'      => 'acro_document',
+            'posts_per_page' => 50,
+            'post_status'    => 'publish',
+            'orderby'        => 'date',
+            'order'          => 'DESC'
+        ]);
+
+        $data = [];
+        foreach($posts as $p) {
+            $data[] = $this->format_document($p);
+        }
+        return rest_ensure_response($data);
+    }
+
+    /**
+     * DOCUMENTOS: Criar Documento
+     */
+    public function create_document( \WP_REST_Request $request ) {
+        $params = $request->get_json_params();
+        $title = $params['title'] ?? 'Novo Documento';
+        $p_id = wp_insert_post([
+            'post_type'   => 'acro_document',
+            'post_title'  => sanitize_text_field($title),
+            'post_status' => 'publish'
+        ]);
+
+        if(is_wp_error($p_id)) return new \WP_REST_Response(['error' => 'Falha ao criar'], 500);
+
+        update_post_meta($p_id, '_acro_doc_type', sanitize_text_field($params['type'] ?? 'orcamento'));
+        update_post_meta($p_id, '_acro_client_id', sanitize_text_field($params['client_id'] ?? ''));
+        update_post_meta($p_id, '_acro_client_name', sanitize_text_field($params['client_name'] ?? ''));
+        update_post_meta($p_id, '_acro_client_email', sanitize_text_field($params['client_email'] ?? ''));
+        update_post_meta($p_id, '_acro_items', $params['items'] ?? []);
+        update_post_meta($p_id, '_acro_total', floatval($params['total'] ?? 0));
+        update_post_meta($p_id, '_acro_status', 'pendente');
+        update_post_meta($p_id, '_acro_terms', wp_kses_post($params['terms'] ?? ''));
+
+        return rest_ensure_response($this->format_document(get_post($p_id)));
+    }
+
+    /**
+     * DOCUMENTOS: Atualizar
+     */
+    public function update_document( \WP_REST_Request $request ) {
+        $id = $request->get_param('id');
+        $params = $request->get_json_params();
+        
+        $post_data = ['ID' => $id];
+        if ( isset($params['title']) ) {
+            $post_data['post_title'] = sanitize_text_field($params['title']);
+        }
+        wp_update_post($post_data);
+
+        if ( isset($params['type']) ) update_post_meta($id, '_acro_doc_type', sanitize_text_field($params['type']));
+        if ( isset($params['client_id']) ) update_post_meta($id, '_acro_client_id', sanitize_text_field($params['client_id']));
+        if ( isset($params['client_name']) ) update_post_meta($id, '_acro_client_name', sanitize_text_field($params['client_name']));
+        if ( isset($params['client_email']) ) update_post_meta($id, '_acro_client_email', sanitize_text_field($params['client_email']));
+        if ( isset($params['items']) ) update_post_meta($id, '_acro_items', $params['items']);
+        if ( isset($params['total']) ) update_post_meta($id, '_acro_total', floatval($params['total']));
+        if ( isset($params['terms']) ) update_post_meta($id, '_acro_terms', wp_kses_post($params['terms']));
+
+        return rest_ensure_response($this->format_document(get_post($id)));
+    }
+
+    /**
+     * DOCUMENTOS: Excluir
+     */
+    public function delete_document( \WP_REST_Request $request ) {
+        $id = $request->get_param('id');
+        wp_delete_post($id, true);
+        return rest_ensure_response(['success' => true]);
+    }
+
+    /**
+     * DOCUMENTOS: Enviar via WhatsApp
+     */
+    public function send_document_whatsapp( \WP_REST_Request $request ) {
+        $id = intval( $request->get_param( 'id' ) );
+        $doc = get_post( $id );
+        if ( ! $doc || $doc->post_type !== 'acro_document' ) {
+            return new \WP_REST_Response( [ 'error' => 'Documento não encontrado' ], 404 );
+        }
+
+        $params = $request->get_json_params();
+        $client_name = get_post_meta( $id, '_acro_client_name', true );
+        $public_url  = get_permalink( $id );
+        
+        $phone = sanitize_text_field( $params['phone'] ?? '' );
+
+        // Se o telefone não foi enviado, tenta buscar pelo nome do cliente
+        if ( empty( $phone ) ) {
+            $matched_clients = get_posts([
+                'post_type'  => 'acro_client',
+                'title'      => $client_name,
+                'posts_per_page' => 1
+            ]);
+            
+            if ( ! empty( $matched_clients ) ) {
+                $phone = get_post_meta( $matched_clients[0]->ID, '_acro_phone', true );
+            }
+        }
+
+        if ( empty( $phone ) ) {
+            return new \WP_REST_Response( [ 'error' => 'telefone_nao_encontrado' ], 400 );
+        }
+
+        $wa = new Acromidia_WhatsApp_API();
+        $sent = $wa->send_proposal_message( $phone, $client_name, $doc->post_title, $public_url );
+
+        if ( $sent ) {
+            return rest_ensure_response( [ 'success' => true ] );
+        }
+        return new \WP_REST_Response( [ 'error' => 'Falha ao enviar WhatsApp.' ], 500 );
+    }
+
+    /**
+     * DOCUMENTOS: Aceitar / Converter status
+     */
+    public function accept_document( \WP_REST_Request $request ) {
+        $id = $request->get_param('id');
+        
+        // 1. Atualizar status do documento
+        update_post_meta($id, '_acro_status', 'aceito');
+
+        // 2. Mover tarefas vinculadas no Kanban para Concluído
+        $tasks = get_posts([
+            'post_type'  => 'acro_task',
+            'meta_key'   => '_acro_document_id',
+            'meta_value' => $id,
+            'posts_per_page' => -1
+        ]);
+
+        foreach ($tasks as $t) {
+            update_post_meta($t->ID, '_acro_task_status', 'done');
+        }
+
+        return rest_ensure_response(['success' => true]);
+    }
+
+    /**
+     * DOCUMENTOS: Reverter Status
+     */
+    public function revert_document( \WP_REST_Request $request ) {
+        $id = $request->get_param('id');
+        
+        // 1. Atualizar status do documento para pendente
+        update_post_meta($id, '_acro_status', 'pendente');
+
+        // 2. Mover tarefas vinculadas no Kanban de volta para A Fazer
+        $tasks = get_posts([
+            'post_type'  => 'acro_task',
+            'meta_key'   => '_acro_document_id',
+            'meta_value' => $id,
+            'posts_per_page' => -1
+        ]);
+
+        foreach ($tasks as $t) {
+            update_post_meta($t->ID, '_acro_task_status', 'todo');
+        }
+
+        return rest_ensure_response(['success' => true]);
+    }
+
+    private function format_document($post) {
+        return [
+            'id'           => $post->ID,
+            'title'        => $post->post_title,
+            'type'         => get_post_meta($post->ID, '_acro_doc_type', true),
+            'client_id'    => get_post_meta($post->ID, '_acro_client_id', true),
+            'client_name'  => get_post_meta($post->ID, '_acro_client_name', true),
+            'client_email' => get_post_meta($post->ID, '_acro_client_email', true),
+            'items'        => get_post_meta($post->ID, '_acro_items', true) ?: [],
+            'total'        => get_post_meta($post->ID, '_acro_total', true),
+            'status'       => get_post_meta($post->ID, '_acro_status', true),
+            'date'         => get_the_date('d/m/Y', $post->ID),
+            'public_url'   => get_permalink($post->ID),
+            'terms'        => get_post_meta($post->ID, '_acro_terms', true) ?: ''
+        ];
+    }
+
+    /**
+     * TAREFAS: Listar
+     */
+    public function get_tasks() {
+        $posts = get_posts([
+            'post_type'      => 'acro_task',
+            'posts_per_page' => -1,
+            'post_status'    => 'publish'
+        ]);
+        $data = [];
+        foreach($posts as $p) {
+            $data[] = $this->format_task($p);
+        }
+        return rest_ensure_response($data);
+    }
+
+    /**
+     * TAREFAS: Criar
+     */
+    public function create_task( \WP_REST_Request $request ) {
+        $params = $request->get_json_params();
+        $p_id = wp_insert_post([
+            'post_type'    => 'acro_task',
+            'post_title'   => sanitize_text_field($params['title'] ?? 'Nova Tarefa'),
+            'post_content' => wp_kses_post($params['description'] ?? ''),
+            'post_status'  => 'publish'
+        ]);
+
+        if(is_wp_error($p_id)) return new \WP_REST_Response(['error' => 'Falha'], 500);
+
+        update_post_meta($p_id, '_acro_task_status', sanitize_text_field($params['status'] ?? 'todo'));
+        update_post_meta($p_id, '_acro_task_priority', sanitize_text_field($params['priority'] ?? 'medium'));
+        update_post_meta($p_id, '_acro_client_id', sanitize_text_field($params['client_id'] ?? ''));
+        update_post_meta($p_id, '_acro_client_name', sanitize_text_field($params['client_name'] ?? ''));
+        update_post_meta($p_id, '_acro_document_id', sanitize_text_field($params['document_id'] ?? ''));
+
+        return rest_ensure_response($this->format_task(get_post($p_id)));
+    }
+
+    /**
+     * TAREFAS: Atualizar (Movimentação no Kanban)
+     */
+    public function update_task( \WP_REST_Request $request ) {
+        $id = $request->get_param('id');
+        $params = $request->get_json_params();
+
+        $post_data = ['ID' => $id];
+        if ( isset($params['title']) ) $post_data['post_title'] = sanitize_text_field($params['title']);
+        if ( isset($params['description']) ) $post_data['post_content'] = wp_kses_post($params['description']);
+        
+        wp_update_post($post_data);
+
+        if ( isset($params['status']) ) update_post_meta($id, '_acro_task_status', sanitize_text_field($params['status']));
+        if ( isset($params['priority']) ) update_post_meta($id, '_acro_task_priority', sanitize_text_field($params['priority']));
+        if ( isset($params['client_id']) ) update_post_meta($id, '_acro_client_id', sanitize_text_field($params['client_id']));
+        if ( isset($params['client_name']) ) update_post_meta($id, '_acro_client_name', sanitize_text_field($params['client_name']));
+        if ( isset($params['document_id']) ) update_post_meta($id, '_acro_document_id', sanitize_text_field($params['document_id']));
+
+        return rest_ensure_response($this->format_task(get_post($id)));
+    }
+
+    /**
+     * TAREFAS: Deletar
+     */
+    public function delete_task( \WP_REST_Request $request ) {
+        $id = $request->get_param('id');
+        wp_delete_post($id, true);
+        return rest_ensure_response(['success' => true]);
+    }
+
+    private function format_task($post) {
+        return [
+            'id'          => $post->ID,
+            'title'       => $post->post_title,
+            'description' => $post->post_content,
+            'status'      => get_post_meta($post->ID, '_acro_task_status', true) ?: 'todo',
+            'priority'    => get_post_meta($post->ID, '_acro_task_priority', true) ?: 'medium',
+            'client_id'   => get_post_meta($post->ID, '_acro_client_id', true),
+            'client_name' => get_post_meta($post->ID, '_acro_client_name', true),
+            'document_id' => get_post_meta($post->ID, '_acro_document_id', true),
+            'date'        => get_the_date('d/m/Y', $post->ID)
+        ];
+    }
+
     // ───────────────────────────────────
     //  Formatadores Auxiliares
     // ───────────────────────────────────
+
+    /**
+     * RENDER: Documento Público (Template)
+     */
+    public function render_document_template( $template ) {
+        if ( is_singular( 'acro_document' ) || get_query_var( 'post_type' ) === 'acro_document' ) {
+            $file = plugin_dir_path( __FILE__ ) . 'templates/single-document.php';
+            if ( file_exists( $file ) ) {
+                @header('X-Acro-View: Document-Template-Hit');
+                return $file;
+            }
+        }
+        return $template;
+    }
 
     private function format_client( $post ) {
         return [

@@ -130,4 +130,47 @@ class Acromidia_WhatsApp_API {
         
         return $success;
     }
+
+    public function send_proposal_message( $to_number, $client_name, $doc_title, $public_url ) {
+        $url = "https://graph.facebook.com/v17.0/{$this->phone_id}/messages";
+
+        $text = "📄 *Proposta Comercial:* {$doc_title}\n\n";
+        $text .= "Olá, *{$client_name}*! Tudo bem?\n\n";
+        $text .= "Conforme conversamos, segue o link da sua proposta detalhada:\n\n";
+        $text .= "🔗 *Ver Proposta:* {$public_url}\n\n";
+        $text .= "Qualquer dúvida, estou à disposição para conversarmos!";
+
+        $body = [
+            'messaging_product' => 'whatsapp',
+            'to'                => $to_number,
+            'type'              => 'text',
+            'text'              => [
+                'preview_url' => true,
+                'body'        => $text
+            ]
+        ];
+
+        $args = [
+            'method'  => 'POST',
+            'headers' => [
+                'Authorization' => 'Bearer ' . $this->token,
+                'Content-Type'  => 'application/json',
+            ],
+            'body'    => wp_json_encode( $body ),
+            'timeout' => 30,
+        ];
+
+        $response = wp_remote_post( $url, $args );
+
+        if ( is_wp_error( $response ) ) {
+            return false;
+        }
+
+        $response_code = wp_remote_retrieve_response_code( $response );
+        $success = ( $response_code === 200 || $response_code === 201 );
+        
+        $this->log_dispatch( $to_number, $client_name, 'Envio de Proposta', $success );
+        
+        return $success;
+    }
 }

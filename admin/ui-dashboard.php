@@ -5,6 +5,17 @@ $rest_url   = rest_url( 'acromidia/v1' );
 $settings_url = admin_url( 'admin.php?page=acromidia-settings' );
 $asaas_ok     = \Acromidia_Gateway_Factory::is_configured();
 $wa_ok        = \Acromidia_Settings::has('wa_token') && \Acromidia_Settings::has('wa_phone_id');
+
+// Identifica o gateway ativo para UI dinâmica
+$primary_id = \Acromidia_Settings::get( 'primary_gateway' ) ?: 'asaas';
+$gateways_map = [
+    'asaas'       => 'Asaas',
+    'stripe'      => 'Stripe',
+    'mercadopago' => 'Mercado Pago',
+    'pagarme'     => 'Pagar.me',
+    'pagbank'     => 'PagBank'
+];
+$gateway_label = $gateways_map[$primary_id] ?? 'Gateway';
 ?>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <script src="https://cdn.tailwindcss.com"></script>
@@ -51,15 +62,23 @@ html, body, #wpwrap, #wpbody, #wpbody-content, #wpfooter {
 .btn-primary:hover { background: #4338ca !important; transform: translateY(-1px); }
 
 /* ── INPUTS ── */
-.input-label { display: block; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.1em; color: var(--acro-slate); margin-bottom: 8px; margin-left: 4px; }
+.input-label { display: block; font-size: 13px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.1em; color: var(--acro-slate); margin-bottom: 8px; margin-left: 4px; }
 .modern-input {
-    width: 100% !important; height: 56px !important; background: #fff !important; 
+    width: 100%; height: 56px; background: #fff !important; 
     border: 2px solid var(--acro-border) !important; border-radius: 16px !important; 
     padding: 0 20px 0 54px !important;
     font-size: 15px !important; font-weight: 600 !important; color: var(--acro-text) !important; 
-    transition: all 0.2s !important; outline: none !important; box-sizing: border-box !important;
+    transition: border 0.2s, box-shadow 0.2s !important; outline: none !important; box-sizing: border-box !important;
 }
 .modern-input:focus { border-color: var(--acro-primary) !important; box-shadow: 0 0 0 4px rgba(79, 70, 229, 0.1) !important; }
+.modern-textarea {
+    height: auto;
+    min-height: 100px !important;
+    padding: 15px 20px 15px 54px !important;
+    line-height: 1.6 !important;
+    resize: vertical !important;
+    overflow-y: auto !important;
+}
 
 .input-icon { 
     position: absolute !important; left: 20px !important; top: 50% !important; transform: translateY(-50%) !important; 
@@ -82,6 +101,9 @@ html, body, #wpwrap, #wpbody, #wpbody-content, #wpfooter {
 [v-cloak] { display: none; }
 .fade-enter-active, .fade-leave-active { transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
 .fade-enter-from, .fade-leave-to { opacity: 0; transform: translateY(30px) scale(0.95); }
+
+.list-enter-active, .list-leave-active { transition: all 0.4s ease; }
+.list-enter-from, .list-leave-to { opacity: 0; transform: translateX(30px); }
 </style>
 
 <div id="acro-app" class="acro-app pb-20" v-cloak>
@@ -103,13 +125,19 @@ html, body, #wpwrap, #wpbody, #wpbody-content, #wpfooter {
         <button @click="view='dashboard'" :class="view==='dashboard'?'bg-white shadow-sm text-indigo-600':'text-slate-500'" class="px-6 py-2 rounded-xl text-sm font-black transition-all">Geral</button>
         <button @click="view='clients'" :class="view==='clients'?'bg-white shadow-sm text-indigo-600':'text-slate-500'" class="px-6 py-2 rounded-xl text-sm font-black transition-all">Carteira</button>
         <button @click="view='crm'" :class="view==='crm'?'bg-white shadow-sm text-indigo-600':'text-slate-500'" class="px-6 py-2 rounded-xl text-sm font-black transition-all flex items-center gap-2"><i data-lucide="kanban" class="w-4 h-4"></i> Pipeline CRM</button>
+        <button @click="view='finance'" :class="view==='finance'?'bg-white shadow-sm text-indigo-600':'text-slate-500'" class="px-6 py-2 rounded-xl text-sm font-black transition-all flex items-center gap-2"><i data-lucide="wallet" class="w-4 h-4"></i> Financeiro</button>
+        <button @click="view='docs'" :class="view==='docs'?'bg-white shadow-sm text-indigo-600':'text-slate-500'" class="px-6 py-2 rounded-xl text-sm font-black transition-all flex items-center gap-2"><i data-lucide="file-check" class="w-4 h-4"></i> Propostas</button>
+        <button @click="view='tasks'" :class="view==='tasks'?'bg-white shadow-sm text-indigo-600':'text-slate-500'" class="px-6 py-2 rounded-xl text-sm font-black transition-all flex items-center gap-2"><i data-lucide="clipboard-list" class="w-4 h-4"></i> Produção</button>
         <button @click="view='reports'" :class="view==='reports'?'bg-white shadow-sm text-indigo-600':'text-slate-500'" class="px-6 py-2 rounded-xl text-sm font-black transition-all">Relatórios</button>
       </nav>
 
       <div class="flex items-center gap-5">
-        <a :href="settingsUrl" class="w-10 h-10 rounded-2xl flex items-center justify-center text-slate-400 hover:bg-slate-50 transition-all"><i data-lucide="settings" class="w-5 h-5"></i></a>
-        <button v-if="asaasOk" @click="importAsaas" :disabled="importing" class="btn-primary flex items-center gap-2" :class="{'opacity-70 cursor-wait': importing}">
-            <i data-lucide="cloud-download" class="w-4 h-4" :class="{'animate-pulse': importing}"></i> {{ importing ? 'Sincronizando...' : 'Importar Asaas' }}
+        <a :href="settingsUrl" class="w-10 h-10 rounded-2xl flex items-center justify-center text-slate-400 hover:bg-slate-50 transition-all" title="Configurações"><i data-lucide="settings" class="w-5 h-5"></i></a>
+        <button v-if="asaasOk" @click="importGateway" :disabled="importing" 
+                class="px-5 py-2.5 bg-indigo-50 border border-indigo-100/50 text-indigo-600 rounded-xl font-black text-[10px] uppercase tracking-widest flex items-center gap-2 hover:bg-indigo-500 hover:text-white hover:border-indigo-500 transition-all shadow-sm active:scale-95 disabled:opacity-50 disabled:cursor-wait"
+                :class="{'animate-pulse pointer-events-none': importing}">
+            <i data-lucide="cloud-download" class="w-4 h-4" :class="{'animate-spin': importing}"></i> 
+            {{ importing ? 'Sincronizando' : 'Importar ' + gatewayLabel }}
         </button>
       </div>
     </div>
@@ -124,7 +152,7 @@ html, body, #wpwrap, #wpbody, #wpbody-content, #wpfooter {
             <p class="text-slate-500 font-medium mt-1">Visão clara e automatizada da saúde do seu faturamento.</p>
         </div>
         <div class="flex gap-3">
-            <span :class="asaasOk?'badge-success':'badge-warning'" class="badge">Gateway Asaas</span>
+             <span :class="asaasOk?'badge-success':'badge-warning'" class="badge">Gateway {{ gatewayLabel }}</span>
             <span :class="waOk?'badge-success':'badge-warning'" class="badge">WhatsApp Ativo</span>
         </div>
       </div>
@@ -133,11 +161,11 @@ html, body, #wpwrap, #wpbody, #wpbody-content, #wpfooter {
         <div class="card-glass p-8 border-b-4 border-b-sky-500">
             <span class="input-label">Saldo em Conta Asaas</span>
             <div v-if="loadingBalance" class="mt-2 text-sky-500"><i data-lucide="loader-2" class="w-6 h-6 animate-spin"></i></div>
-            <p v-else class="text-4xl font-black text-slate-900 tracking-tighter mt-2">R$ {{ formatMoney(asaasBalance) }}</p>
+            <p v-else class="text-4xl font-black text-slate-900 tracking-tighter mt-2 whitespace-nowrap">R$&nbsp;{{ formatMoney(asaasBalance) }}</p>
         </div>
         <div class="card-glass p-8 border-b-4 border-b-indigo-500">
             <span class="input-label">Receita Recorrente (MRR)</span>
-            <p class="text-4xl font-black text-slate-900 tracking-tighter mt-2">R$ {{ totalMRR }}</p>
+            <p class="text-4xl font-black text-slate-900 tracking-tighter mt-2 whitespace-nowrap">R$&nbsp;{{ formatMoney(totalMRR) }}</p>
         </div>
         <div class="card-glass p-8 border-b-4 border-b-emerald-500">
             <span class="input-label">Base de Clientes Ativos</span>
@@ -152,7 +180,7 @@ html, body, #wpwrap, #wpbody, #wpbody-content, #wpfooter {
       <div class="card-glass overflow-hidden shadow-2xl shadow-rose-100/30 border-t-4 border-t-rose-500">
         <div class="px-8 py-6 bg-gradient-to-r from-rose-50 to-white flex justify-between items-center border-b border-rose-100">
             <h3 class="font-black text-rose-800 uppercase text-xs tracking-widest flex items-center gap-2"><i data-lucide="alert-triangle" class="w-4 h-4 text-rose-500"></i> Radar de Inadimplência</h3>
-            <button v-if="overdueCount>0" @click="view='clients'; filterStatus='inadimplente';" class="text-[10px] font-black uppercase text-rose-600 hover:text-rose-700 tracking-widest bg-white border border-rose-200 px-3 py-1.5 rounded-full shadow-sm">Ver Todos</button>
+            <button v-if="overdueCount>0" @click="view='clients'; filterStatus='inadimplente';" class="text-[12px] font-black uppercase text-rose-600 hover:text-rose-700 tracking-widest bg-white border border-rose-200 px-3 py-1.5 rounded-full shadow-sm">Ver Todos</button>
         </div>
         <div v-if="loading" class="p-20 text-center"><i data-lucide="loader-2" class="w-8 h-8 animate-spin mx-auto text-rose-500"></i></div>
         <div v-else-if="!clients.filter(c => c.status==='inadimplente').length" class="p-20 text-center flex flex-col items-center justify-center">
@@ -172,16 +200,131 @@ html, body, #wpwrap, #wpbody, #wpbody-content, #wpfooter {
                 <div class="flex items-center gap-3">
                     <div class="text-right mr-4 hidden md:block">
                         <p class="font-black text-rose-600 text-lg leading-none">R$ {{ formatMoney(c.mrr) }}</p>
-                        <p class="text-[9px] text-slate-400 font-bold mt-1 uppercase tracking-widest">Atrasado</p>
+                        <p class="text-[11px] text-slate-400 font-bold mt-1 uppercase tracking-widest">Atrasado</p>
                     </div>
                     
                     <button v-if="c.site_status === 'blocked'" @click="toggleBlock(c)" class="p-2.5 rounded-xl border border-rose-200 bg-rose-50 text-rose-600 hover:bg-rose-100 transition-all shadow-sm flex items-center justify-center shrink-0" title="Desbloquear Site Manualmente"><i data-lucide="lock" class="w-4 h-4"></i></button>
                     <button v-else @click="toggleBlock(c)" class="p-2.5 rounded-xl border border-slate-200 text-slate-400 hover:text-rose-600 hover:border-rose-200 hover:bg-rose-50 transition-all flex items-center justify-center shrink-0" title="Bloquear Site Imediatamente"><i data-lucide="unlock" class="w-4 h-4"></i></button>
 
-                    <button @click="sendWhatsApp($event, c, '15_days_after')" class="px-4 py-2.5 rounded-xl bg-slate-900 text-white hover:bg-slate-800 transition-all shadow-md shadow-slate-200 flex items-center gap-2 text-[10px] font-black uppercase tracking-widest shrink-0" title="Disparar Acompanhamento"><i data-lucide="message-circle" class="w-3.5 h-3.5"></i> Cobrar</button>
+                    <button @click="sendWhatsApp($event, c, '15_days_after')" class="px-4 py-2.5 rounded-xl bg-slate-900 text-white hover:bg-slate-800 transition-all shadow-md shadow-slate-200 flex items-center gap-2 text-[12px] font-black uppercase tracking-widest shrink-0" title="Disparar Acompanhamento"><i data-lucide="message-circle" class="w-3.5 h-3.5"></i> Cobrar</button>
                 </div>
             </div>
         </div>
+      </div>
+
+      <!-- ERP SNAPSHOT -->
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-8 mt-12 mb-20 animate-in fade-in slide-in-from-bottom-5 duration-700">
+          <div class="md:col-span-2">
+              <div class="card-glass shadow-2xl shadow-indigo-100/30 border-t-4 border-t-indigo-500">
+                  <div class="px-8 py-6 bg-gradient-to-r from-indigo-50/50 to-white flex justify-between items-center border-b border-indigo-100">
+                      <h3 class="font-black text-indigo-800 uppercase text-xs tracking-widest flex items-center gap-2"><i data-lucide="wallet" class="w-4 h-4 text-indigo-500"></i> Fluxo de Caixa (ERP Interno)</h3>
+                      <button @click="view='finance'" class="text-[10px] font-black uppercase text-indigo-600 hover:text-indigo-700 tracking-widest bg-white border border-indigo-200 px-3 py-1.5 rounded-full shadow-sm">Gestão Completa</button>
+                  </div>
+                   <div class="p-8 grid grid-cols-2 lg:grid-cols-4 gap-6 text-center bg-white/30 backdrop-blur-xl h-full">
+                       <!-- RECEBER -->
+                       <div class="bg-emerald-50/50 p-6 rounded-3xl border border-emerald-100/50 flex flex-col items-center justify-center relative overflow-hidden group">
+                           <p class="text-[10px] uppercase font-bold text-emerald-600 tracking-widest mb-1.5 opacity-70">Previsão de Receita</p>
+                            <p class="text-xl font-black text-emerald-600 whitespace-nowrap tracking-tight">
+                                <span class="text-xs font-bold opacity-70 mr-0.5">R$</span> {{ formatMoney(totalPendingIncomes) }}
+                            </p>
+                            <div class="mt-2 pt-2 border-t border-emerald-100 w-full">
+                                <p class="text-[8px] font-bold text-emerald-400 uppercase tracking-tighter line-clamp-1">Realizado: R$&nbsp;{{ formatMoney(totalIncomes) }}</p>
+                            </div>
+                       </div>
+                       
+                       <!-- PAGAR -->
+                       <div class="bg-rose-50/50 p-6 rounded-3xl border border-rose-100/50 flex flex-col items-center justify-center relative overflow-hidden group">
+                           <p class="text-[10px] uppercase font-bold text-rose-600 tracking-widest mb-1.5 opacity-70">Custos & Obrigações</p>
+                            <p class="text-xl font-black text-rose-600 whitespace-nowrap tracking-tight">
+                                <span class="text-xs font-bold opacity-70 mr-0.5">R$</span> {{ formatMoney(totalPendingExpenses) }}
+                            </p>
+                            <div class="mt-2 pt-2 border-t border-rose-100 w-full">
+                                <p class="text-[8px] font-bold text-rose-400 uppercase tracking-tighter line-clamp-1">Maior Ralo: {{ topExpenseCategory }}</p>
+                            </div>
+                       </div>
+
+                       <!-- BALANÇO OPERACIONAL (DRE) -->
+                       <div class="bg-indigo-50/50 p-6 rounded-3xl border border-indigo-100/50 flex flex-col items-center justify-center">
+                           <p class="text-[10px] uppercase font-bold text-indigo-400 tracking-widest mb-1.5">Margem de Lucro (DRE)</p>
+                            <p class="text-xl font-black whitespace-nowrap tracking-tight" :class="profitMargin >= 0 ? 'text-indigo-600' : 'text-rose-600'">
+                                {{ profitMargin >= 0 ? '' : '-' }}{{ Math.round(Math.abs(profitMargin)) }}%
+                            </p>
+                            <div class="mt-2 pt-2 border-t border-indigo-100 w-full">
+                                <p class="text-[8px] font-bold text-indigo-400 uppercase tracking-tighter">Resultado: R$&nbsp;{{ formatMoney(totalIncomes - totalExpenses) }}</p>
+                            </div>
+                       </div>
+
+                       <!-- PROJEÇÃO DE CAIXA -->
+                       <div class="bg-slate-900 p-6 rounded-3xl shadow-xl shadow-slate-200 flex flex-col items-center justify-center border border-slate-700/50">
+                           <p class="text-[10px] uppercase font-bold text-slate-400 tracking-widest mb-1.5 flex items-center gap-1"><i data-lucide="trending-up" class="w-2.5 h-2.5"></i> Projeção de Caixa</p>
+                            <p class="text-xl font-black text-white whitespace-nowrap tracking-tight">
+                                <span class="text-xs font-bold opacity-50 mr-0.5">R$</span> {{ formatMoney(projectedEndBalance) }}
+                           </p>
+                           <div class="mt-2 pt-2 border-t border-slate-700 w-full">
+                                <p class="text-[8px] font-bold text-slate-500 uppercase tracking-tighter">Líquido Atual: R$&nbsp;{{ formatMoney(asaasBalance + (totalIncomes - totalExpenses)) }}</p>
+                            </div>
+                       </div>
+                   </div>
+              </div>
+          </div>
+          <div class="md:col-span-1">
+              <div class="card-glass shadow-2xl shadow-amber-100/30 border-t-4 border-t-amber-500">
+                  <div class="px-8 py-6 bg-gradient-to-r from-amber-50/50 to-white flex justify-between items-center border-b border-amber-100">
+                      <h3 class="font-black text-amber-800 uppercase text-xs tracking-widest flex items-center gap-2"><i data-lucide="file-check" class="w-4 h-4 text-amber-500"></i> Pipeline Comercial</h3>
+                  </div>
+                  <div class="px-8 py-6 flex flex-col items-center justify-between bg-white/50">
+                      <div class="w-full">
+                          <div class="flex items-center justify-between mb-4">
+                              <div>
+                                  <p class="text-[10px] uppercase font-black text-slate-400 tracking-widest leading-none">Total no Mês</p>
+                                  <p class="text-3xl font-black text-slate-900 tracking-tighter mt-1">{{ commercialStats.total }} <span class="text-xs font-bold opacity-30">PROPOSTAS</span></p>
+                              </div>
+                              <div class="bg-amber-50 px-2 py-1 rounded-lg border border-amber-100 flex items-center gap-1.5 self-start">
+                                  <i data-lucide="info" class="w-2.5 h-2.5 text-amber-500"></i>
+                                  <span class="text-[8px] font-black text-amber-600 uppercase tracking-widest">{{ commercialStats.pending }} Pendentes</span>
+                              </div>
+                          </div>
+
+                          <!-- Mini Indicadores -->
+                          <div class="grid grid-cols-2 gap-3">
+                              <div class="bg-emerald-50/50 p-3 rounded-xl border border-emerald-100 flex items-center justify-between">
+                                  <div>
+                                      <p class="text-[7px] font-black text-emerald-400 uppercase tracking-widest">Aceitas</p>
+                                      <p class="text-base font-black text-emerald-600">{{ commercialStats.accepted }}</p>
+                                  </div>
+                                  <div class="w-7 h-7 rounded-full bg-emerald-100/50 text-emerald-600 flex items-center justify-center">
+                                      <i data-lucide="check" class="w-3.5 h-3.5"></i>
+                                  </div>
+                              </div>
+                              <div class="bg-rose-50/50 p-3 rounded-xl border border-rose-100 flex items-center justify-between">
+                                  <div>
+                                      <p class="text-[7px] font-black text-rose-400 uppercase tracking-widest">Negadas</p>
+                                      <p class="text-base font-black text-rose-600">{{ commercialStats.rejected }}</p>
+                                  </div>
+                                  <div class="w-7 h-7 rounded-full bg-rose-100/50 text-rose-600 flex items-center justify-center">
+                                      <i data-lucide="x" class="w-3.5 h-3.5"></i>
+                                  </div>
+                              </div>
+                          </div>
+
+                          <!-- Proporção -->
+                          <div class="mt-4 flex flex-col gap-2">
+                              <div class="flex justify-between items-center text-[8px] font-black uppercase tracking-widest px-1">
+                                  <span class="text-emerald-500">Taxa de Conversão</span>
+                                  <span class="text-slate-900">{{ Math.round(commercialStats.conversion_rate) }}%</span>
+                              </div>
+                              <div class="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden flex">
+                                  <div class="h-full bg-emerald-500 transition-all duration-1000" :style="{ width: commercialStats.conversion_rate + '%' }"></div>
+                              </div>
+                          </div>
+                      </div>
+
+                      <button @click="view='docs'" class="w-full py-3.5 px-6 bg-slate-900 text-white text-[10px] font-black rounded-xl shadow-xl shadow-slate-200 hover:bg-slate-800 transition-all uppercase tracking-widest mt-6 flex items-center justify-center gap-2 active:scale-95">
+                          <i data-lucide="plus-circle" class="w-4 h-4 text-white"></i> Criar Proposta
+                      </button>
+                  </div>
+              </div>
+          </div>
       </div>
     </div>
 
@@ -204,6 +347,44 @@ html, body, #wpwrap, #wpbody, #wpbody-content, #wpfooter {
                 <p class="text-[10px] text-slate-500 font-bold mt-2 uppercase tracking-widest leading-tight">Arrecadação de<br>clientes em dia</p>
             </div>
 
+            <div class="card-glass p-6 border-b-4 border-indigo-500 md:col-span-2">
+                <div class="flex items-center justify-between mb-4">
+                    <span class="text-[10px] font-black uppercase text-indigo-600 tracking-widest">Desempenho Comercial (30d)</span>
+                    <i data-lucide="bar-chart-3" class="w-5 h-5 text-indigo-500"></i>
+                </div>
+                
+                <div class="grid grid-cols-12 gap-4 mt-10">
+                    <div class="col-span-2 text-center">
+                        <p class="text-2xl font-black text-slate-900">{{ commercialStats.total }}</p>
+                        <p class="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-1">Propostas</p>
+                    </div>
+                    <div class="col-span-2 text-center border-l border-slate-100">
+                        <p class="text-2xl font-black text-emerald-600">{{ Math.round(commercialStats.conversion_rate) }}%</p>
+                        <p class="text-[9px] text-emerald-600/60 font-black uppercase tracking-widest mt-1">Conversão</p>
+                    </div>
+                    <div class="col-span-2 text-center border-l border-slate-100">
+                        <p class="text-2xl font-black text-rose-500">{{ commercialStats.rejected }}</p>
+                        <p class="text-[9px] text-rose-400 font-bold uppercase tracking-widest mt-1">Rejeitadas</p>
+                    </div>
+                    <div class="col-span-6 text-center border-l border-slate-100 bg-slate-50/50 rounded-2xl py-2">
+                        <p class="text-2xl font-black text-slate-900">R$ {{ formatMoney(commercialStats.avg_ticket) }}</p>
+                        <p class="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-1">Ticket Médio</p>
+                    </div>
+                </div>
+
+                <div class="mt-8 flex items-center justify-between bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                    <div class="flex flex-col">
+                        <span class="text-[8px] font-black text-slate-400 uppercase tracking-widest">Pipeline em Aberto</span>
+                        <span class="text-sm font-black text-amber-600">R$ {{ formatMoney(commercialStats.opportunity) }}</span>
+                    </div>
+                    <div class="h-8 w-px bg-slate-200"></div>
+                    <div class="flex flex-col items-end">
+                        <span class="text-[8px] font-black text-slate-400 uppercase tracking-widest">Volume Fechado</span>
+                        <span class="text-sm font-black text-emerald-600">R$ {{ formatMoney(commercialStats.revenue) }}</span>
+                    </div>
+                </div>
+            </div>
+
             <!-- MRR em Risco -->
             <div class="card-glass p-6 border-b-4 border-rose-500 bg-gradient-to-br from-white to-rose-50">
                 <div class="flex items-center justify-between mb-4">
@@ -212,30 +393,6 @@ html, body, #wpwrap, #wpbody, #wpbody-content, #wpfooter {
                 </div>
                 <h3 class="text-3xl font-black text-slate-900 tracking-tighter">R$ {{ formatMoney(mrrRisco) }}</h3>
                 <p class="text-[10px] text-slate-500 font-bold mt-2 uppercase tracking-widest leading-tight">Valor retido em<br>inadimplência</p>
-            </div>
-
-            <!-- Funil de Vendas -->
-            <div class="card-glass p-6 border-b-4 border-sky-500 md:col-span-2">
-                <div class="flex items-center justify-between mb-4">
-                    <span class="text-[10px] font-black uppercase text-sky-600 tracking-widest">Saúde do Funil</span>
-                    <i data-lucide="filter" class="w-5 h-5 text-sky-500"></i>
-                </div>
-                <div class="flex items-center justify-between mt-6 px-4">
-                    <div class="text-center">
-                        <p class="text-4xl font-black text-slate-900">{{ pipelineBreakdown.prospect || 0 }}</p>
-                        <p class="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-1">Leads (API)</p>
-                    </div>
-                    <i data-lucide="chevron-right" class="w-4 h-4 text-slate-300"></i>
-                    <div class="text-center">
-                        <p class="text-4xl font-black text-slate-900">{{ pipelineBreakdown.onboarding || 0 }}</p>
-                        <p class="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-1">Em Setup</p>
-                    </div>
-                    <i data-lucide="chevron-right" class="w-4 h-4 text-slate-300 hidden md:block"></i>
-                    <div class="text-center hidden md:block">
-                        <p class="text-4xl font-black text-slate-900 text-emerald-600">{{ pipelineBreakdown.ativo || 0 }}</p>
-                        <p class="text-[9px] text-emerald-600/60 font-black uppercase tracking-widest mt-1">Ativos</p>
-                    </div>
-                </div>
             </div>
         </div>
         
@@ -295,7 +452,324 @@ html, body, #wpwrap, #wpbody, #wpbody-content, #wpfooter {
         </div>
     </div>
 
-    <!-- MONITORAMENTO DE CARTEIRA -->
+    <!-- FINANCE VIEW (ERP Fluxo de Caixa) -->
+    <div v-if="view==='finance'">
+        <header class="mb-12 flex flex-col md:flex-row md:items-end justify-between gap-6">
+            <div>
+                <h2 class="text-4xl font-black text-slate-900 tracking-tighter">Fluxo de Caixa Interno</h2>
+                <p class="text-slate-500 font-medium mt-1">Gestão centralizada de receitas e despesas da sua operação.</p>
+            </div>
+            <button @click="showFinanceModal=true" class="btn-primary">
+                <i data-lucide="plus-circle" class="w-4 h-4"></i> Novo Lançamento
+            </button>
+        </header>
+
+        <div v-if="loadingFinance" class="text-center py-20 opacity-20"><i data-lucide="loader-2" class="w-12 h-12 animate-spin mx-auto text-indigo-600"></i></div>
+        <div v-else class="space-y-12">
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-8 mb-12">
+            <div class="card-glass p-8 border-b-4 border-b-emerald-500 bg-gradient-to-br from-white to-emerald-50 hover:shadow-xl transition-all">
+                <span class="input-label">Entradas Realizadas</span>
+                <p class="text-4xl font-black text-emerald-600 tracking-tighter mt-2">R$ {{ formatMoney(totalIncomes) }}</p>
+            </div>
+            <div class="card-glass p-8 border-b-4 border-b-rose-500 bg-gradient-to-br from-white to-rose-50 hover:shadow-xl transition-all">
+                <span class="input-label">Saídas Realizadas</span>
+                <p class="text-4xl font-black text-rose-600 tracking-tighter mt-2">R$ {{ formatMoney(totalExpenses) }}</p>
+            </div>
+            <div class="card-glass p-8 border-b-4 border-b-indigo-500 bg-gradient-to-br from-white to-indigo-50 hover:shadow-xl transition-all">
+                <span class="input-label">Saldo em Caixa</span>
+                <p class="text-4xl font-black text-indigo-600 tracking-tighter mt-2 whitespace-nowrap">R$&nbsp;{{ formatMoney(totalIncomes - totalExpenses) }}</p>
+            </div>
+        </div>
+
+        <!-- LISTA DE LANÇAMENTOS -->
+        <div class="card-glass overflow-hidden shadow-2xl shadow-indigo-100/10">
+            <div class="px-8 py-6 bg-slate-50/50 border-b flex flex-col gap-6">
+                <!-- Linha 1: Título e Filtro de Período Rápido -->
+                <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                    <div class="flex items-center gap-4">
+                        <h3 class="input-label !mb-0 text-slate-800">Fluxo de Caixa</h3>
+                        <div class="flex items-center bg-slate-200/50 p-1 rounded-xl shadow-inner border border-slate-300/30">
+                            <button @click="setFinancePeriod('today')" 
+                                    :class="financePeriod === 'today' ? 'bg-white shadow-sm text-indigo-600 rounded-lg' : 'text-slate-500 hover:text-indigo-600'" 
+                                    class="px-3 py-1.5 text-[10px] font-black uppercase transition-all">Hoje</button>
+                            <button @click="setFinancePeriod('week')" 
+                                    :class="financePeriod === 'week' ? 'bg-white shadow-sm text-indigo-600 rounded-lg' : 'text-slate-500 hover:text-indigo-600'" 
+                                    class="px-3 py-1.5 text-[10px] font-black uppercase transition-all border-x border-slate-300/30">Semana</button>
+                            <button @click="setFinancePeriod('month')" 
+                                    :class="financePeriod === 'month' ? 'bg-white shadow-sm text-indigo-600 rounded-lg' : 'text-slate-500 hover:text-indigo-600'" 
+                                    class="px-3 py-1.5 text-[10px] font-black uppercase transition-all">Mês</button>
+                        </div>
+                    </div>
+
+                    <div class="flex items-center gap-3">
+                        <span class="text-[11px] font-black text-slate-400 uppercase tracking-widest hidden md:block">Intervalo Personalizado:</span>
+                        <div class="flex items-center gap-2 bg-white border border-slate-200 p-1.5 rounded-xl text-slate-500 shadow-sm mr-2">
+                            <div class="flex items-center gap-2 px-2 border-r border-slate-100">
+                                <span class="text-[11px] font-black uppercase tracking-tighter">De</span>
+                                <input type="date" v-model="financeDateStart" class="bg-transparent border-none p-0 text-[11px] font-black text-slate-900 focus:ring-0 cursor-pointer">
+                            </div>
+                            <div class="flex items-center gap-2 px-2">
+                                <span class="text-[11px] font-black uppercase tracking-tighter">Até</span>
+                                <input type="date" v-model="financeDateEnd" class="bg-transparent border-none p-0 text-[11px] font-black text-slate-900 focus:ring-0 cursor-pointer">
+                            </div>
+                        </div>
+
+                        <button @click="printFinanceReport" :disabled="!filteredTransactions.length" class="h-[38px] px-4 bg-slate-900 text-white rounded-xl flex items-center gap-2 hover:bg-indigo-600 transition-all shadow-lg shadow-slate-200 disabled:opacity-50 disabled:cursor-not-allowed">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
+                            <span class="text-[11px] font-black uppercase tracking-widest hidden sm:inline">Imprimir</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Linha 2: Filtros de Tipo e Status -->
+                <div class="flex flex-col md:flex-row md:items-center gap-4">
+                    <div class="flex items-center bg-slate-100 p-1 rounded-xl">
+                        <button @click="financeHistoryTab='all'" :class="financeHistoryTab==='all' ? 'bg-white shadow-sm text-indigo-600' : 'text-slate-500 hover:text-slate-700'" class="px-4 py-1.5 text-[12px] font-black uppercase tracking-widest rounded-lg transition-all">Todos Lançamentos</button>
+                        <button @click="financeHistoryTab='income'" :class="financeHistoryTab==='income' ? 'bg-white shadow-sm text-emerald-600' : 'text-slate-500 hover:text-slate-700'" class="px-4 py-1.5 text-[12px] font-black uppercase tracking-widest rounded-lg transition-all">Somente Receitas</button>
+                        <button @click="financeHistoryTab='expense'" :class="financeHistoryTab==='expense' ? 'bg-white shadow-sm text-rose-600' : 'text-slate-500 hover:text-slate-700'" class="px-4 py-1.5 text-[12px] font-black uppercase tracking-widest rounded-lg transition-all">Somente Despesas</button>
+                    </div>
+
+                    <div class="hidden md:block w-px h-6 bg-slate-200 mx-2"></div>
+
+                    <div class="flex items-center bg-slate-100 p-1 rounded-xl">
+                        <button @click="financeStatusFilter='all'" :class="financeStatusFilter==='all' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-100' : 'text-slate-500'" class="px-4 py-1.5 text-[12px] font-black uppercase tracking-widest rounded-lg transition-all">Total</button>
+                        <button @click="financeStatusFilter='pago'" :class="financeStatusFilter==='pago' ? 'bg-white shadow-sm text-slate-900 font-black' : 'text-slate-500 font-bold'" class="px-4 py-1.5 text-[12px] uppercase tracking-widest rounded-lg transition-all">Pagos / Recebidos</button>
+                        <button @click="financeStatusFilter='pendente'" :class="financeStatusFilter==='pendente' ? 'bg-white shadow-sm text-amber-600 font-black' : 'text-slate-500 font-bold'" class="px-4 py-1.5 text-[12px] uppercase tracking-widest rounded-lg transition-all">A Pagar / Receber</button>
+                    </div>
+                </div>
+            </div>
+            <table class="w-full text-left">
+                <thead class="bg-slate-50/30 border-b text-slate-400">
+                    <tr>
+                        <th class="px-8 py-5 text-[11px] font-black uppercase tracking-[0.2em]">Data</th>
+                        <th class="px-8 py-5 text-[11px] font-black uppercase tracking-[0.2em]">Descrição</th>
+                        <th class="px-8 py-5 text-[11px] font-black uppercase tracking-[0.2em]">Fluxo</th>
+                        <th class="px-8 py-5 text-[11px] font-black uppercase tracking-[0.2em]">Status</th>
+                        <th class="px-8 py-5 text-[11px] font-black uppercase tracking-[0.2em]">Categoria</th>
+                        <th class="px-8 py-5 text-[11px] font-black uppercase tracking-[0.2em] text-right">Valor</th>
+                        <th class="px-8 py-5 text-[11px] font-black uppercase tracking-[0.2em] text-center">Ações</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100">
+                    <tr v-if="loadingFinance" class="text-center">
+                        <td colspan="7" class="py-20 text-slate-400"><i data-lucide="loader-2" class="w-8 h-8 animate-spin mx-auto text-indigo-600"></i></td>
+                    </tr>
+                    <tr v-else-if="!filteredTransactions.length">
+                        <td colspan="7" class="py-32">
+                            <div class="flex flex-col items-center justify-center text-center w-full">
+                                <div class="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center text-slate-200 mb-6 shrink-0 shadow-inner">
+                                    <i data-lucide="receipt" class="w-10 h-10"></i>
+                                </div>
+                                <h4 class="text-slate-400 font-black text-[10px] uppercase tracking-[0.2em] mb-2">Nenhuma transação encontrada</h4>
+                                <p class="text-slate-300 font-bold text-[10px] uppercase tracking-widest max-w-[300px] leading-relaxed">Tente mudar o filtro ou adicione um novo lançamento manual.</p>
+                            </div>
+                        </td>
+                    </tr>
+                        <tr v-for="t in filteredTransactions" :key="t.id" :class="{'bg-rose-50/50': t.status==='pendente' && isOverdue(t.date)}" class="hover:bg-slate-50 transition-all group">
+                            <td class="px-8 py-6 text-sm font-bold whitespace-nowrap" :class="t.status==='pendente' && isOverdue(t.date) ? 'text-rose-600' : 'text-slate-500'">
+                                {{ t.human_date }}
+                                <div v-if="t.status==='pendente' && isOverdue(t.date)" class="text-[10px] font-black uppercase tracking-tighter text-rose-500 mt-1 flex items-center gap-1">
+                                    <i data-lucide="alert-circle" class="w-2.5 h-2.5"></i> Vencido / Atrasado
+                                </div>
+                            </td>
+                            <td class="px-8 py-6 font-black text-slate-900">
+                                {{ t.description }}
+                                <span v-if="t.recurring" class="ml-2 inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-widest text-indigo-400 border border-indigo-100 px-1.5 py-0.5 rounded">
+                                    <i data-lucide="repeat" class="w-2.5 h-2.5"></i> Recorrente
+                                </span>
+                                <span v-if="t.asaas_id" class="ml-2 inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-widest text-sky-500 bg-sky-50 border border-sky-100 px-1.5 py-0.5 rounded">
+                                    <i data-lucide="refresh-cw" class="w-2.5 h-2.5"></i> Automático (Asaas)
+                                </span>
+                            </td>
+                            <td class="px-8 py-6">
+                                <span v-if="t.type==='income'" class="flex items-center gap-1.5 text-[9px] font-black text-emerald-600 uppercase tracking-widest bg-emerald-50 px-2 py-0.5 rounded-md w-fit">
+                                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Entrada
+                                </span>
+                                <span v-else class="flex items-center gap-1.5 text-[9px] font-black text-rose-600 uppercase tracking-widest bg-rose-50 px-2 py-0.5 rounded-md w-fit">
+                                    <span class="w-1.5 h-1.5 rounded-full bg-rose-500"></span> Saída
+                                </span>
+                            </td>
+                            <td class="px-8 py-6">
+                                <span v-if="t.status==='pago'" class="text-[9px] font-black uppercase tracking-widest text-slate-300 flex items-center gap-1">
+                                    <i data-lucide="check" class="w-3 h-3"></i> Efetuado
+                                </span>
+                                <span v-else class="text-[9px] font-black uppercase tracking-widest text-amber-600 bg-amber-50 px-2 py-1 rounded-full flex items-center gap-1 w-fit shadow-sm border border-amber-100">
+                                    <i data-lucide="clock" class="w-3 h-3"></i> Pendente
+                                </span>
+                            </td>
+                            <td class="px-8 py-6">
+                            <span class="px-3 py-1 bg-slate-100 text-slate-600 text-[10px] font-black rounded-lg uppercase tracking-widest border border-slate-200">{{ t.category }}</span>
+                        </td>
+                        <td class="px-8 py-6 text-right font-black whitespace-nowrap" :class="t.type==='income'?'text-emerald-600':'text-rose-600'">
+                            {{ t.type==='income'?'+':'-' }} R$&nbsp;{{ formatMoney(t.amount) }}
+                        </td>
+                         <td class="px-8 py-6 text-center">
+                            <div class="flex items-center justify-center gap-2">
+                                <button v-if="t.status==='pendente'" @click="markAsPaid(t)" class="w-8 h-8 flex items-center justify-center bg-emerald-50 text-emerald-600 rounded-lg hover:bg-emerald-500 hover:text-white transition-all shadow-sm" title="Marcar como Pago">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                                </button>
+                                <button @click="openFinanceEditModal(t)" class="w-8 h-8 flex items-center justify-center bg-slate-50 text-slate-400 rounded-lg hover:bg-white hover:text-indigo-600 hover:shadow-md transition-all" title="Editar">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                                </button>
+                                <button @click="handleDeleteTransaction(t.id)" class="w-8 h-8 flex items-center justify-center bg-slate-50 text-slate-400 rounded-lg hover:bg-white hover:text-rose-500 hover:shadow-md transition-all" title="Excluir">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path><path d="M10 11v6"></path><path d="M14 11v6"></path><path d="M9 6V4h6v2"></path></svg>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- DOCUMENTS VIEW (Propostas e Contratos) -->
+    <div v-if="view==='docs'">
+        <header class="mb-12 flex flex-col md:flex-row md:items-end justify-between gap-6">
+            <div>
+                <h2 class="text-4xl font-black text-slate-900 tracking-tighter">Propostas e Contratos</h2>
+                <p class="text-slate-500 font-medium mt-1">Feche mais negócios com orçamentos profissionais e links compartilháveis.</p>
+            </div>
+            <button @click="openDocModal" class="btn-primary">
+                <i data-lucide="plus-circle" class="w-4 h-4"></i> Criar Proposta
+            </button>
+        </header>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
+            <div class="card-glass p-6 border-b-4 border-slate-300">
+                <span class="input-label">Documentos Totais</span>
+                <p class="text-3xl font-black text-slate-900 mt-2">{{ documents.length }}</p>
+            </div>
+            <div class="card-glass p-6 border-b-4 border-amber-400">
+                <span class="input-label">Aguardando Resposta</span>
+                <p class="text-3xl font-black text-amber-600 mt-2">{{ documents.filter(d => d.status==='pendente').length }}</p>
+            </div>
+            <div class="card-glass p-6 border-b-4 border-emerald-500">
+                <span class="input-label">Convertidos (Aceitos)</span>
+                <p class="text-3xl font-black text-emerald-600 mt-2">{{ documents.filter(d => d.status==='aceito').length }}</p>
+            </div>
+            <div class="card-glass p-6 border-b-4 border-indigo-500">
+                <span class="input-label">Volume de Orçamentos</span>
+                <p class="text-3xl font-black text-indigo-600 mt-2">R$ {{ formatMoney(documents.reduce((a,d)=>a+parseFloat(d.total||0),0)) }}</p>
+            </div>
+        </div>
+
+        <div class="card-glass overflow-hidden shadow-2xl shadow-indigo-100/10">
+            <table class="w-full text-left">
+                <thead class="bg-slate-50 border-b">
+                    <tr>
+                        <th class="px-8 py-5 text-[10px] font-black uppercase text-slate-400 tracking-[0.2em]">Data</th>
+                        <th class="px-8 py-5 text-[10px] font-black uppercase text-slate-400 tracking-[0.2em]">Título / Cliente</th>
+                        <th class="px-8 py-5 text-[10px] font-black uppercase text-slate-400 tracking-[0.2em]">Valor</th>
+                        <th class="px-8 py-5 text-[10px] font-black uppercase text-slate-400 tracking-[0.2em]">Status</th>
+                        <th class="px-8 py-5 text-[10px] font-black uppercase text-slate-400 tracking-[0.2em] text-center">Ações</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100">
+                    <tr v-if="loadingDocs" class="text-center">
+                        <td colspan="5" class="py-20 text-indigo-600"><i data-lucide="loader-2" class="w-8 h-8 animate-spin mx-auto"></i></td>
+                    </tr>
+                    <tr v-else-if="!documents.length" class="text-center py-20">
+                        <td colspan="5" class="py-20 flex flex-col items-center justify-center">
+                             <div class="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center text-slate-300 mb-4"><i data-lucide="file-text" class="w-8 h-8"></i></div>
+                             <p class="text-slate-400 font-black text-xs uppercase tracking-widest">Inicie criando uma proposta para seus clientes.</p>
+                        </td>
+                    </tr>
+                    <tr v-for="doc in documents" :key="doc.id" class="hover:bg-slate-50 transition-all">
+                        <td class="px-8 py-6 text-xs font-bold text-slate-500 tracking-widest">{{ doc.date }}</td>
+                        <td class="px-8 py-6">
+                            <p class="font-black text-slate-900 leading-tight">{{ doc.title }}</p>
+                            <p class="text-[10px] text-indigo-500 font-black uppercase tracking-widest mt-1">{{ doc.client_name }}</p>
+                        </td>
+                        <td class="px-8 py-6 font-black text-slate-900">R$ {{ formatMoney(doc.total) }}</td>
+                        <td class="px-8 py-6">
+                            <span :class="doc.status==='aceito'?'badge-success':(doc.status==='pendente'?'badge-warning':'badge-danger')" class="badge uppercase">{{ doc.status==='aceito'?'ACEITO':doc.status }}</span>
+                        </td>
+                        <td class="px-8 py-6">
+                            <div class="flex items-center justify-center gap-3">
+                                <button v-if="doc.status !== 'aceito'" @click="acceptDocument(doc)" class="p-2.5 rounded-xl border-2 border-emerald-100 text-emerald-600 hover:bg-emerald-600 hover:text-white transition-all shadow-sm flex items-center justify-center" title="Aceitar Orçamento"><i data-lucide="check-circle" class="w-4 h-4"></i></button>
+                                <button v-else @click="revertDocument(doc)" class="p-2.5 rounded-xl border-2 border-amber-100 text-amber-600 hover:bg-amber-600 hover:text-white transition-all shadow-sm flex items-center justify-center" title="Reverter para Pendente"><i data-lucide="rotate-ccw" class="w-4 h-4"></i></button>
+                                <button @click="openDocEditModal(doc)" class="p-2.5 rounded-xl border-2 border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-indigo-600 transition-all shadow-sm flex items-center justify-center" title="Editar Proposta"><i data-lucide="edit-3" class="w-4 h-4"></i></button>
+                                <button @click="printProposal(doc)" class="p-2.5 rounded-xl border-2 border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-indigo-600 hover:border-indigo-100 transition-all shadow-sm flex items-center justify-center" title="Imprimir Proposta"><i data-lucide="printer" class="w-4 h-4"></i></button>
+                                <button @click="sendDocWhatsApp(doc)" class="p-2.5 rounded-xl border-2 border-emerald-100 text-emerald-600 hover:bg-emerald-50 transition-all shadow-sm flex items-center justify-center" title="Enviar WhatsApp"><i data-lucide="message-circle" class="w-4 h-4"></i></button>
+                                <button @click="handleDeleteDoc(doc.id)" class="p-2.5 text-slate-300 hover:text-rose-500 transition-colors pointer-cursor"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                            </div>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- PRODUCTION KANBAN (Tarefas) -->
+    <div v-if="view==='tasks'">
+        <header class="mb-12 flex flex-col md:flex-row md:items-end justify-between gap-6">
+            <div>
+                <h2 class="text-4xl font-black text-slate-900 tracking-tighter">Fluxo de Produção</h2>
+                <p class="text-slate-500 font-medium mt-1">Gerencie a entrega dos seus serviços e acompanhe o progresso técnico.</p>
+            </div>
+            <button @click="openTaskModal" class="btn-primary !bg-indigo-600 shadow-indigo-100">
+                <i data-lucide="plus-circle" class="w-4 h-4"></i> Nova Tarefa
+            </button>
+        </header>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+            <div v-for="col in taskColumns" :key="col.id" 
+                 :class="col.bg"
+                 class="flex flex-col h-full rounded-[40px] border border-slate-100 p-6 min-h-[70vh] transition-all" 
+                 @dragover.prevent @drop="onDropTask($event, col.id)">
+                <div class="flex items-center justify-between mb-8 px-2">
+                    <h3 class="font-black text-[11px] uppercase tracking-[0.3em] text-slate-400 flex items-center gap-2">
+                        <span :class="col.color" class="w-2.5 h-2.5 rounded-full shadow-lg"></span>
+                        {{ col.name }}
+                    </h3>
+                    <span class="bg-indigo-50 text-indigo-600 rounded-full px-3 py-1 text-[10px] font-black border border-indigo-100">{{ tasks.filter(t => t.status===col.id).length }}</span>
+                </div>
+
+                <div class="space-y-6">
+                    <div v-if="loadingTasks" class="text-center py-20 opacity-20"><i data-lucide="loader-2" class="w-6 h-6 animate-spin mx-auto"></i></div>
+                    <template v-else>
+                      <div v-for="task in tasks.filter(t => t.status===col.id)" :key="task.id" 
+                           draggable="true" 
+                           @dragstart="onDragTask($event, task)"
+                           class="card-glass p-6 border-l-4 hover:shadow-2xl hover:-translate-y-1 transition-all cursor-move group"
+                           :class="task.priority==='high'?'border-rose-500':(task.priority==='medium'?'border-amber-400':'border-slate-300')">
+                        
+                        <div class="flex flex-col gap-4">
+                            <div class="flex justify-between items-start gap-4">
+                                <h4 class="font-black text-slate-900 text-base leading-tight flex-1">{{ task.title }}</h4>
+                                <div class="flex gap-1 shrink-0">
+                                    <button @click="openTaskEditModal(task)" class="p-1.5 text-slate-300 hover:text-indigo-600 transition-all"><i data-lucide="edit-3" class="w-3.5 h-3.5"></i></button>
+                                </div>
+                            </div>
+                            
+                            <p v-if="task.description" class="text-xs text-slate-400 line-clamp-2 leading-relaxed">{{ task.description }}</p>
+
+                            <div v-if="task.client_id || task.client_name" class="flex items-center gap-2 px-3 py-1.5 bg-indigo-50/50 rounded-xl border border-indigo-100/50 w-max">
+                                <i data-lucide="user" class="w-3 h-3 text-indigo-400"></i>
+                                <span class="text-[9px] font-black text-indigo-600 uppercase tracking-widest">
+                                    {{ task.client_id ? (clients.find(c => c.id == task.client_id)?.name || task.client_name || 'Cliente') : task.client_name }}
+                                </span>
+                            </div>
+
+                            <div class="flex items-center justify-between pt-3 border-t border-slate-50">
+                                <div class="flex items-center gap-2">
+                                    <span :class="task.priority==='high'?'text-rose-500':(task.priority==='medium'?'text-amber-500':'text-slate-400')" class="flex items-center gap-1 text-[9px] font-black uppercase tracking-widest">
+                                        <i data-lucide="zap" class="w-3 h-3"></i> {{ task.priority }}
+                                    </span>
+                                </div>
+                                <div class="flex items-center gap-3">
+                                    <span class="text-[9px] font-black text-slate-300 uppercase tracking-widest">{{ task.date }}</span>
+                                    <button @click="handleDeleteTask(task.id)" class="opacity-0 group-hover:opacity-100 p-1 text-slate-300 hover:text-rose-500 transition-all"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
+                                </div>
+                            </div>
+                        </div>
+                      </div>
+                    </template>
+                </div>
+            </div>
+        </div>
+    </div>
     <div v-if="view==='clients'">
         <header class="flex flex-col md:flex-row md:items-end justify-between gap-8 mb-8">
             <div class="flex flex-col gap-5">
@@ -611,6 +1085,383 @@ html, body, #wpwrap, #wpbody, #wpbody-content, #wpfooter {
     </div>
   </transition>
 
+  <!-- MODAL DE LANÇAMENTO FINANCEIRO -->
+  <transition name="fade">
+    <div v-if="showFinanceModal" class="fixed inset-0 z-[1000] flex items-center justify-center p-4">
+        <div class="absolute inset-0 modal-overlay" @click="showFinanceModal=false"></div>
+        <div class="relative bg-white w-full max-w-lg rounded-[40px] modal-card overflow-hidden">
+            <header class="px-10 pt-10 pb-6 border-b border-slate-100 flex items-center justify-between">
+                <div>
+                    <h3 class="text-3xl font-black text-slate-900 tracking-tighter">{{ (editTarget && editTarget.type==='finance') ? 'Editar Lançamento' : 'Novo Lançamento' }}</h3>
+                    <p class="text-slate-400 font-bold mt-1 text-xs uppercase tracking-widest">{{ (editTarget && editTarget.type==='finance') ? 'Ajuste os dados da movimentação conforme necessário.' : 'Registre entradas ou saídas de caixa.' }}</p>
+                </div>
+                <div class="w-14 h-14 bg-indigo-600 rounded-2xl flex items-center justify-center text-white shadow-xl shadow-indigo-100">
+                    <i data-lucide="landmark" class="w-6 h-6"></i>
+                </div>
+            </header>
+            <form @submit.prevent="saveTransaction" class="p-10 space-y-8">
+                <div class="flex bg-slate-100 p-1.5 rounded-2xl">
+                    <button type="button" @click="financeForm.type='income'" :class="financeForm.type==='income'?'bg-white shadow-sm text-emerald-600':'text-slate-500'" class="flex-1 py-3 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all">Receita</button>
+                    <button type="button" @click="financeForm.type='expense'" :class="financeForm.type==='expense'?'bg-white shadow-sm text-rose-600':'text-slate-500'" class="flex-1 py-3 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all">Despesa</button>
+                </div>
+
+                <div class="space-y-6">
+                    <div>
+                        <label class="input-label">Descrição do Lançamento</label>
+                        <div class="relative">
+                            <i data-lucide="type" class="input-icon"></i>
+                            <input v-model="financeForm.description" type="text" class="modern-input" placeholder="Ex: Venda de Site, Aluguel, Salário..." required>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-6">
+                        <div>
+                            <label class="input-label">Valor (R$)</label>
+                            <div class="relative">
+                                <div class="input-icon font-black text-[12px] text-slate-400">R$</div>
+                                <input :value="displayFinanceAmount" @input="handleFinanceAmountInput" type="text" class="modern-input" placeholder="0,00" required>
+                            </div>
+                        </div>
+                        <div>
+                            <label class="input-label">Data / Vencimento</label>
+                            <div class="relative">
+                                <i data-lucide="calendar" class="input-icon"></i>
+                                <input v-model="financeForm.date" type="date" class="modern-input !pl-14" required>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="input-label">Status do Lançamento</label>
+                        <div class="flex bg-slate-100 p-1 rounded-xl">
+                            <button type="button" @click="financeForm.status='pago'" :class="financeForm.status==='pago'?'bg-white shadow-sm text-slate-900 font-black':'text-slate-400'" class="flex-1 py-1.5 rounded-lg text-[9px] uppercase tracking-widest transition-all">Consolidado (Pago/Recebido)</button>
+                            <button type="button" @click="financeForm.status='pendente'" :class="financeForm.status==='pendente'?'bg-white shadow-sm text-amber-600 font-black':'text-slate-400'" class="flex-1 py-1.5 rounded-lg text-[9px] uppercase tracking-widest transition-all">Pendente (Previsão)</button>
+                        </div>
+                    </div>
+
+                    <div class="flex items-center gap-3 bg-indigo-50/30 p-4 rounded-3xl border border-indigo-100/30 transition-all">
+                        <div class="w-10 h-10 rounded-xl bg-white flex items-center justify-center text-indigo-600 shadow-sm border border-indigo-50">
+                            <i data-lucide="repeat" class="w-5 h-5"></i>
+                        </div>
+                        <div class="flex-1">
+                            <p class="text-[10px] font-black text-slate-900 uppercase tracking-widest flex items-center gap-2">
+                                Lançamento Recorrente
+                                <span v-if="financeForm.recurring" class="px-2 py-0.5 bg-indigo-600 text-white text-[7px] rounded-full">ATIVO</span>
+                            </p>
+                            <p class="text-[9px] text-slate-500 font-medium">Cria automaticamente a fatura do mês seguinte.</p>
+                        </div>
+                        <label class="relative inline-flex items-center cursor-pointer">
+                            <input type="checkbox" v-model="financeForm.recurring" class="sr-only peer">
+                            <div class="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+                        </label>
+                    </div>  
+
+                    <div>
+                        <div class="flex items-center justify-between mb-2">
+                            <label class="input-label !mb-0">Categoria</label>
+                            <div class="flex items-center gap-3">
+                                <button type="button" @click="managingCategories=!managingCategories; addingCategory=false" class="text-[10px] font-black uppercase tracking-widest flex items-center gap-1 transition-all" :class="managingCategories ? 'text-rose-500 hover:text-rose-700' : 'text-slate-400 hover:text-slate-600'">
+                                    <i :data-lucide="managingCategories ? 'x' : 'settings-2'" class="w-3 h-3"></i> {{ managingCategories ? 'Fechar' : 'Gerir' }}
+                                </button>
+                                <button type="button" @click="addingCategory=!addingCategory; managingCategories=false" class="text-[10px] font-black text-indigo-500 hover:text-indigo-700 uppercase tracking-widest flex items-center gap-1 transition-all">
+                                    <i data-lucide="plus" class="w-3 h-3"></i> Nova
+                                </button>
+                            </div>
+                        </div>
+                        <!-- Campo inline para nova categoria -->
+                        <transition name="fade">
+                            <div v-if="addingCategory" class="flex gap-3 mb-4 items-center bg-indigo-50 px-4 py-3 rounded-2xl border border-indigo-100">
+                                <i data-lucide="tag" class="w-4 h-4 text-indigo-400 shrink-0"></i>
+                                <input v-model="newCategoryInput" @keyup.enter="addFinanceCategory" type="text" class="flex-1 bg-transparent border-none focus:ring-0 text-sm font-bold text-slate-800 placeholder-indigo-300" placeholder="Nome da categoria...">
+                                <button type="button" @click="addFinanceCategory" :disabled="savingCategory" class="text-[10px] font-black text-white bg-indigo-600 px-3 py-1.5 rounded-xl hover:bg-indigo-700 transition-all uppercase tracking-wider shrink-0">
+                                    <i v-if="savingCategory" data-lucide="loader-2" class="w-3 h-3 animate-spin"></i>
+                                    <span v-else>OK</span>
+                                </button>
+                                <button type="button" @click="addingCategory=false; newCategoryInput=''" class="text-slate-400 hover:text-rose-500 transition-all">
+                                    <i data-lucide="x" class="w-4 h-4"></i>
+                                </button>
+                            </div>
+                        </transition>
+
+                        <!-- Modo gerenciamento: chips de categorias -->
+                        <transition name="fade">
+                            <div v-if="managingCategories" class="mb-4 p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                                <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Todas as Categorias — Clique no 🗑 para excluir</p>
+                                <div class="flex flex-wrap gap-2">
+                                    <div v-for="cat in financeCategories" :key="cat" class="flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-100 transition-all">
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path><line x1="7" y1="7" x2="7.01" y2="7"></line></svg>
+                                        {{ cat }}
+                                        <!-- Confirmação inline -->
+                                        <template v-if="categoryDeleteConfirm === cat">
+                                            <button type="button" @click="deleteFinanceCategory(cat)" class="text-[9px] font-black bg-rose-500 text-white px-2 py-0.5 rounded-lg hover:bg-rose-600 transition-all uppercase ml-1">Sim</button>
+                                            <button type="button" @click="categoryDeleteConfirm=null" class="text-[9px] font-black text-slate-400 hover:text-slate-600 uppercase">Não</button>
+                                        </template>
+                                        <button v-else type="button" @click="categoryDeleteConfirm=cat" class="ml-1 text-indigo-300 hover:text-rose-500 transition-colors" title="Excluir categoria">
+                                            <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path><path d="M10 11v6"></path><path d="M14 11v6"></path><path d="M9 6V4h6v2"></path></svg>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </transition>
+
+                        <div class="relative">
+                            <i data-lucide="tag" class="input-icon"></i>
+                            <select v-model="financeForm.category" class="modern-input" required>
+                                <option v-for="cat in financeCategories" :key="cat" :value="cat">{{ cat }}</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex items-center gap-6 pt-4">
+                    <button type="button" @click="showFinanceModal=false" class="flex-1 py-5 text-xs font-black text-slate-400 hover:text-indigo-600 transition-colors uppercase tracking-widest">Cancelar</button>
+                    <button type="submit" class="flex-[2] h-16 bg-indigo-600 text-white text-sm font-black rounded-3xl shadow-2xl shadow-indigo-100 hover:bg-indigo-700 transition-all uppercase tracking-[0.1em] flex items-center justify-center gap-3" :disabled="savingFinance">
+                        <i v-if="savingFinance" data-lucide="loader-2" class="w-5 h-5 animate-spin"></i>
+                        {{ savingFinance ? 'Salvando...' : 'Registrar' }}
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+  </transition>
+  
+  <!-- MODAL DE CRIAÇÃO DE DOCUMENTO (ORÇAMENTO/CONTRATO) -->
+  <transition name="fade">
+    <div v-if="showDocModal" class="fixed inset-0 z-[1000] flex items-center justify-center p-4">
+        <div class="absolute inset-0 modal-overlay" @click="showDocModal=false"></div>
+        <div class="relative bg-white w-full max-w-6xl h-[85vh] rounded-[40px] modal-card overflow-hidden flex flex-col shadow-2xl">
+            <!-- Header Integrado -->
+            <header class="px-10 py-8 border-b border-slate-100 flex items-center justify-between bg-white shrink-0">
+                <div class="flex items-center gap-6">
+                    <div class="w-14 h-14 bg-indigo-600 rounded-2xl flex items-center justify-center text-white shadow-xl shadow-indigo-100">
+                        <i :data-lucide="docForm.type==='orcamento'?'file-text':'scroll-text'" class="w-7 h-7"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-3xl font-black text-slate-900 tracking-tighter">Gerar {{ docForm.type==='orcamento'?'Orçamento':'Contrato' }}</h3>
+                        <p class="text-slate-400 font-bold text-xs uppercase tracking-widest mt-1">Transforme negociações em documentos profissionais.</p>
+                    </div>
+                </div>
+                <div class="flex bg-slate-100 p-1.5 rounded-2xl">
+                    <button type="button" @click="docForm.type='orcamento'" :class="docForm.type==='orcamento'?'bg-white shadow-sm text-indigo-600':'text-slate-500'" class="px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all">Orçamento</button>
+                    <button type="button" @click="docForm.type='contrato'" :class="docForm.type==='contrato'?'bg-white shadow-sm text-indigo-600':'text-slate-500'" class="px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all">Contrato</button>
+                </div>
+            </header>
+            
+            <div class="flex-1 flex overflow-hidden">
+                <!-- Lado Esquerdo: Formulário Profundo -->
+                <div class="flex-1 overflow-y-auto p-12 bg-slate-50/30 space-y-12 border-r border-slate-100">
+                    
+                    <!-- Bloco A: Cliente e Título -->
+                    <section class="space-y-8">
+                        <h4 class="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em] flex items-center gap-2 mb-4"><span class="w-2 h-2 bg-indigo-500 rounded-full"></span> Cabeçalho do Documento</h4>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                            <div class="space-y-2">
+                                <label class="input-label ml-0">Título do Projeto</label>
+                                <div class="relative">
+                                    <i data-lucide="layout" class="input-icon"></i>
+                                    <input v-model="docForm.title" type="text" class="modern-input" placeholder="Ex: E-commerce de Joias - Fase 1" required>
+                                </div>
+                            </div>
+                            <div class="space-y-2">
+                                <label class="input-label ml-0">Vínculo com Cliente</label>
+                                <div class="flex gap-2">
+                                    <div class="relative flex-1">
+                                        <i data-lucide="user" class="input-icon"></i>
+                                        <select v-if="!isNewDocClient" v-model="docForm.client_id" @change="onDocClientSelect" class="modern-input" required>
+                                            <option value="">Selecione um cliente existente...</option>
+                                            <option v-for="c in clients" :key="c.id" :value="c.id">{{ c.name }} {{ c.phone ? '— ' + c.phone : '' }}</option>
+                                        </select>
+                                        <input v-else v-model="docForm.client_name" type="text" class="modern-input" placeholder="Digite o nome do novo cliente..." required>
+                                    </div>
+                                    <button type="button" @click="isNewDocClient = !isNewDocClient" :class="isNewDocClient ? 'bg-indigo-600 text-white' : 'bg-white text-indigo-600'" class="w-14 h-[56px] border-2 border-indigo-100 rounded-2xl flex items-center justify-center transition-all hover:bg-indigo-50" :title="isNewDocClient ? 'Selecionar da Lista' : 'Cadastrar Novo'">
+                                        <i :data-lucide="isNewDocClient ? 'list' : 'user-plus'" class="w-5 h-5"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- Bloco B: Dinâmica de Itens -->
+                    <section class="space-y-6">
+                        <div class="flex items-center justify-between mb-4">
+                            <h4 class="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em] flex items-center gap-2"><span class="w-2 h-2 bg-indigo-500 rounded-full"></span> Serviços e Valores</h4>
+                            <button @click="docForm.items.push({description:'', price:0})" class="text-[10px] font-black text-indigo-600 bg-indigo-50 hover:bg-indigo-100 px-4 py-2 rounded-xl transition-all uppercase tracking-widest flex items-center gap-2">
+                                <i data-lucide="plus" class="w-3.5 h-3.5"></i> Add Linha
+                            </button>
+                        </div>
+                        
+                        <div class="space-y-4">
+                            <transition-group name="list">
+                                <div v-for="(item, idx) in docForm.items" :key="idx" class="flex gap-4 items-start bg-white p-5 rounded-3xl border border-slate-100 shadow-sm group hover:border-indigo-200 transition-all">
+                                    <div class="flex-1">
+                                        <textarea v-model="item.description" class="modern-input modern-textarea" placeholder="Descreva o serviço ou produto..."></textarea>
+                                    </div>
+                                    <div class="w-48 flex items-center gap-2 bg-slate-50 px-4 h-14 rounded-2xl border border-slate-100 group-hover:bg-indigo-50/50 group-hover:border-indigo-100 transition-all shrink-0">
+                                        <span class="text-[10px] font-black text-slate-400">R$</span>
+                                        <input :value="item.price > 0 ? formatMoney(item.price) : ''" @input="e => handleDocItemPriceInput(item, e)" type="text" class="w-full bg-transparent border-none focus:ring-0 font-black text-slate-900 text-sm text-right" placeholder="0,00">
+                                    </div>
+                                    <button type="button" @click="docForm.items.splice(idx, 1)" class="h-14 px-4 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-all shrink-0"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                                </div>
+                            </transition-group>
+                        </div>
+                    </section>
+
+                    <!-- Bloco C: Termos Jurídicos -->
+                    <section class="space-y-4">
+                        <h4 class="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em] flex items-center gap-2 mb-4"><span class="w-2 h-2 bg-indigo-500 rounded-full"></span> Notas e Cláusulas</h4>
+                        <div class="relative">
+                            <i data-lucide="shield-check" class="input-icon !top-6"></i>
+                            <textarea v-model="docForm.terms" class="modern-input modern-textarea" placeholder="Ex: Validade de 10 dias. Pagamento de 50% no início e 50% na entrega."></textarea>
+                        </div>
+                    </section>
+                </div>
+
+                <!-- Lado Direito: Widget de Resumo (Estilo Fatura) -->
+                <aside class="w-96 bg-slate-50 p-10 flex flex-col justify-between">
+                    <div class="space-y-8">
+                        <div class="p-8 bg-white rounded-[32px] shadow-2xl shadow-indigo-100/50 border border-white relative overflow-hidden">
+                            <div class="absolute top-0 right-0 p-4 opacity-5">
+                                <i data-lucide="badge-check" class="w-20 h-20 text-indigo-600"></i>
+                            </div>
+                            <span class="text-[10px] font-black text-indigo-500 uppercase tracking-[0.2em]">Total Estimado</span>
+                            <div class="mt-4 flex items-baseline gap-1">
+                                <span class="text-xl font-black text-slate-400">R$</span>
+                                <h4 class="text-5xl font-black text-slate-900 tracking-tighter">{{ formatMoney(docFormTotal) }}</h4>
+                            </div>
+                            <div class="mt-8 pt-8 border-t border-slate-50 space-y-4">
+                                <div class="flex justify-between items-center text-[10px] font-black uppercase tracking-widest">
+                                    <span class="text-slate-400">Items:</span>
+                                    <span class="text-slate-900">{{ docForm.items.length }} Unid.</span>
+                                </div>
+                                <div class="flex justify-between items-center text-[10px] font-black uppercase tracking-widest">
+                                    <span class="text-slate-400">Impostos:</span>
+                                    <span class="text-slate-900">Inclusos</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                    </div>
+
+                    <div class="space-y-4 pt-10">
+                        <button @click="saveDocument" class="w-full h-16 bg-slate-900 text-white text-sm font-black rounded-3xl shadow-2xl shadow-slate-200 hover:bg-slate-800 transition-all uppercase tracking-widest flex items-center justify-center gap-3" :disabled="savingDoc">
+                            <i v-if="savingDoc" data-lucide="loader-2" class="w-5 h-5 animate-spin"></i>
+                            {{ savingDoc ? 'Sincronizando...' : 'Finalizar e Gerar' }}
+                        </button>
+                        <button @click="showDocModal=false" class="w-full py-5 text-xs font-black text-slate-400 hover:text-indigo-600 transition-colors uppercase tracking-widest">Descartar Rascunho</button>
+                    </div>
+                </aside>
+            </div>
+        </div>
+    </div>
+  </transition>
+
+  <!-- MODAL DE CRIAÇÃO DE TAREFA -->
+  <transition name="fade">
+    <div v-if="showTaskModal" class="fixed inset-0 z-[1000] flex items-center justify-center p-4">
+        <div class="absolute inset-0 modal-overlay" @click="showTaskModal=false"></div>
+        <div class="relative bg-white w-full max-w-lg rounded-[40px] modal-card overflow-hidden shadow-2xl">
+            <header class="px-10 pt-10 pb-6 border-b border-slate-100 flex items-center justify-between uppercase">
+                <div>
+                    <h3 class="text-3xl font-black text-slate-900 tracking-tighter">{{ editTarget && editTarget.type === 'task' ? 'Editar Atividade' : 'Nova Atividade' }}</h3>
+                    <p class="text-slate-400 font-bold mt-1 text-xs uppercase tracking-widest">Mantenha o foco na entrega técnica.</p>
+                </div>
+                <div :class="editTarget && editTarget.type === 'task' ? 'bg-amber-500' : 'bg-indigo-600'" class="w-14 h-14 rounded-2xl flex items-center justify-center text-white shadow-xl shadow-indigo-100/30 transition-colors">
+                    <i :data-lucide="editTarget && editTarget.type === 'task' ? 'edit-3' : 'clipboard-list'" class="w-6 h-6"></i>
+                </div>
+            </header>
+            <form @submit.prevent="saveTask" class="p-10 space-y-8">
+                <div>
+                    <label class="input-label">Título da Tarefa</label>
+                    <div class="relative">
+                        <i data-lucide="type" class="input-icon"></i>
+                        <input v-model="taskForm.title" type="text" class="modern-input" placeholder="Ex: Ajustar logo, Subir landing page..." required>
+                    </div>
+                </div>
+
+
+                <div>
+                    <label class="input-label">Descrição / Detalhes</label>
+                    <div class="relative">
+                        <i data-lucide="align-left" class="input-icon !top-6"></i>
+                        <textarea v-model="taskForm.description" class="modern-input modern-textarea" placeholder="Descreva os detalhes técnico desta tarefa..."></textarea>
+                    </div>
+                </div>
+
+                <!-- SEÇÃO ÚNICA DE CLIENTE (SMART) -->
+                <div>
+                    <label class="input-label">Identificação do Cliente</label>
+                    
+                    <!-- Estado A: Já vinculado oficialmente -->
+                    <div v-if="taskForm.client_id" class="flex items-center gap-4 p-5 bg-indigo-50 border-2 border-indigo-100 rounded-3xl shadow-lg shadow-indigo-100/20">
+                        <div class="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white shrink-0">
+                            <i data-lucide="shield-check" class="w-5 h-5"></i>
+                        </div>
+                        <div class="flex-1">
+                            <p class="text-[10px] font-black text-indigo-400 uppercase tracking-widest">Vínculo Oficial</p>
+                            <p class="text-sm font-black text-indigo-900">{{ clients.find(c => c.id == taskForm.client_id)?.name || 'Cliente Vinculado' }}</p>
+                        </div>
+                        <button type="button" @click="taskForm.client_id=''" class="p-2 text-indigo-300 hover:text-rose-500 transition-all" title="Remover Vínculo">
+                            <i data-lucide="link-2-off" class="w-4 h-4"></i>
+                        </button>
+                    </div>
+
+                    <!-- Estado B: Nome Manual / Lead -->
+                    <div v-else class="space-y-4">
+                        <div class="relative">
+                            <i data-lucide="user" class="input-icon"></i>
+                            <input v-model="taskForm.client_name" type="text" class="modern-input" placeholder="Digite o nome do lead ou identificação manual...">
+                        </div>
+                        
+                        <div class="flex items-center gap-2">
+                           <span class="text-[10px] font-bold text-slate-300 uppercase tracking-widest">Ou conecte:</span>
+                           <select v-model="taskForm.client_id" class="flex-1 bg-transparent border-none text-[10px] font-black text-indigo-600 uppercase tracking-widest cursor-pointer focus:ring-0">
+                               <option value="">Vincular a Cadastro Oficial...</option>
+                               <option v-for="c in clients" :key="c.id" :value="c.id">{{ c.name }}</option>
+                           </select>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t border-slate-50">
+                    <div>
+                        <label class="input-label">Prioridade da Entrega</label>
+                        <div class="relative">
+                            <i data-lucide="zap" class="input-icon"></i>
+                            <select v-model="taskForm.priority" class="modern-input">
+                                <option value="low">Baixa</option>
+                                <option value="medium">Média</option>
+                                <option value="high">Alta / Urgente</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex items-center gap-6 pt-4">
+                    <button type="button" @click="showTaskModal=false" class="flex-1 py-5 text-xs font-black text-slate-400 hover:text-indigo-600 transition-colors uppercase tracking-widest">Descartar</button>
+                    <button type="submit" class="flex-[2] h-16 bg-indigo-600 text-white text-sm font-black rounded-3xl shadow-2xl shadow-indigo-100 hover:bg-indigo-700 transition-all uppercase tracking-[0.1em] flex items-center justify-center gap-3" :disabled="savingTask">
+                        <i v-if="savingTask" data-lucide="loader-2" class="w-5 h-5 animate-spin"></i>
+                        {{ savingTask ? 'Salvando...' : (editTarget && editTarget.type === 'task' ? 'Salvar Alterações' : 'Adicionar no Kanban') }}
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+  </transition>
+
+  <!-- NOTIFICAÇÕES TOAST -->
+  <div class="fixed bottom-8 right-8 z-[2000] flex flex-col gap-3 pointer-events-none">
+    <transition-group name="list">
+        <div v-for="toast in toasts" :key="toast.id" :class="toast.type==='success'?'bg-slate-900 border-indigo-500':'bg-rose-600 border-rose-400'" class="glass px-8 py-5 rounded-3xl shadow-2xl border-l-4 text-white flex items-center gap-4 min-w-[320px] pointer-events-auto">
+            <i v-if="toast.type==='success'" data-lucide="check-circle-2" class="w-5 h-5 text-indigo-400"></i>
+            <i v-else data-lucide="alert-circle" class="w-5 h-5 text-rose-100"></i>
+            <div>
+                <p class="text-[10px] font-black uppercase tracking-widest opacity-60">{{ toast.title || 'Sistema' }}</p>
+                <p class="text-sm font-bold tracking-tight">{{ toast.message }}</p>
+            </div>
+        </div>
+    </transition-group>
+  </div>
+
 </div>
 
 <script>
@@ -637,11 +1488,122 @@ html, body, #wpwrap, #wpbody, #wpbody-content, #wpfooter {
       const logs = ref([]);
       const loadingLogs = ref(false);
       const metrics = ref({ labels: [], data: [], projected_mrr: 0, churn_risk: 0 });
+      const commercialStats = ref({ total: 0, accepted: 0, pending: 0, rejected: 0, revenue: 0, opportunity: 0, avg_ticket: 0, conversion_rate: 0 });
       const loadingReports = ref(false);
+      const showFinanceModal = ref(false);
+      const loadingFinance = ref(false);
+      const savingFinance = ref(false);
+      const transactions = ref([]);
+      const financeCategories = ref(['Vendas','Infraestrutura','Marketing','Pessoal','Retirada','Variáveis']);
+      const newCategoryInput = ref('');
+      const addingCategory = ref(false);
+      const managingCategories = ref(false);
+      const categoryDeleteConfirm = ref(null);
+      const savingCategory = ref(false);
+      const financeForm = ref({ type: 'income', description: '', amount: 0, date: new Date().toISOString().split('T')[0], category: 'Vendas', status: 'pago', recurring: false });
+      const financeHistoryTab = ref('all'); // all, income, expense
+      const financeStatusFilter = ref('all'); // all, pago, pendente
+
+      // Filtro de Data (Início e Fim do Mês Atual)
+      const now = new Date();
+      const firstDay = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
+      const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
+      const financeDateStart = ref(firstDay);
+      const financeDateEnd = ref(lastDay);
+      const financePeriod = ref('month');
+
+      const setFinancePeriod = (period) => {
+          const today = new Date();
+          const y = today.getFullYear();
+          const m = today.getMonth();
+          const d = today.getDate();
+
+          if (period === 'today') {
+              financeDateStart.value = today.toISOString().split('T')[0];
+              financeDateEnd.value = today.toISOString().split('T')[0];
+          } else if (period === 'week') {
+              const first = today.getDate() - today.getDay(); 
+              financeDateStart.value = new Date(today.setDate(first)).toISOString().split('T')[0];
+              financeDateEnd.value = new Date(today.setDate(first + 6)).toISOString().split('T')[0];
+          } else if (period === 'month') {
+              financeDateStart.value = new Date(y, m, 1).toISOString().split('T')[0];
+              financeDateEnd.value = new Date(y, m + 1, 0).toISOString().split('T')[0];
+          }
+          financePeriod.value = period;
+      };
+
+      const filteredTransactions = computed(() => {
+          let list = transactions.value;
+          
+          if (financeHistoryTab.value !== 'all') {
+              list = list.filter(t => t.type === financeHistoryTab.value);
+          }
+          
+          if (financeStatusFilter.value !== 'all') {
+              list = list.filter(t => t.status === financeStatusFilter.value);
+          }
+
+          if (financeDateStart.value) {
+              list = list.filter(t => t.date >= financeDateStart.value);
+          }
+          if (financeDateEnd.value) {
+              list = list.filter(t => t.date <= financeDateEnd.value);
+          }
+
+          return list;
+      });
+
+      const showDocModal = ref(false);
+      const loadingDocs = ref(false);
+      const savingDoc = ref(false);
+      const documents = ref([]);
+      const docForm = ref({ type: 'orcamento', title: '', client_id: '', client_name: '', client_email: '', items: [{description: '', price: 0}], terms: '' });
+      const isNewDocClient = ref(false);
+
+      const onDocClientSelect = () => {
+          const client = clients.value.find(c => c.id == docForm.value.client_id);
+          if (client) {
+              docForm.value.client_name = client.name;
+              docForm.value.client_email = client.email || '';
+          } else {
+              docForm.value.client_name = '';
+              docForm.value.client_email = '';
+          }
+      };
+
+      const handleDocItemPriceInput = (item, e) => {
+          let val = e.target.value.replace(/\D/g, '');
+          if (val === '') {
+              item.price = 0;
+              return;
+          }
+          item.price = parseFloat(val) / 100;
+      };
+
+      const showTaskModal = ref(false);
+      const loadingTasks = ref(false);
+      const savingTask = ref(false);
+      const tasks = ref([]);
+      const taskForm = ref({ title: '', status: 'todo', priority: 'medium', client_id: '', description: '' });
+
+      const toasts = ref([]);
+      const formatMoney = v => parseFloat(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2});
+
+      const showToast = (message, type = 'success', title = '') => {
+          const id = Date.now();
+          toasts.value.push({ id, message, type, title });
+          nextTick(() => { if (window.lucide) lucide.createIcons(); });
+          setTimeout(() => {
+              toasts.value = toasts.value.filter(t => t.id !== id);
+          }, 4000);
+      };
+
       let chartInstance = null;
+      let financeChartInstance = null;
       const deleteTarget = ref(null);
       const editTarget = ref(null);
       const asaasOk = ref(<?php echo $asaas_ok?'true':'false'; ?>);
+      const gatewayLabel = ref("<?php echo esc_js($gateway_label); ?>");
       const waOk = ref(<?php echo $wa_ok?'true':'false'; ?>);
       const settingsUrl = '<?php echo esc_url($settings_url); ?>';
       
@@ -679,6 +1641,109 @@ html, body, #wpwrap, #wpbody, #wpbody-content, #wpfooter {
         form.value.phone = e.target.value.replace(/\D/g, "");
       };
 
+      const siteLogo = ref("<?php echo esc_url( get_site_icon_url(128) ?: '' ); ?>");
+
+      const printFinanceReport = () => {
+          const list = filteredTransactions.value;
+          const rangeStr = `${new Date(financeDateStart.value).toLocaleDateString()} até ${new Date(financeDateEnd.value).toLocaleDateString()}`;
+          const typeStr = financeHistoryTab.value === 'all' ? 'Completo' : (financeHistoryTab.value === 'income' ? 'de Receitas' : 'de Despesas');
+
+          // Criar iframe oculto para impressão
+          const iframe = document.createElement('iframe');
+          iframe.style.position = 'fixed';
+          iframe.style.right = '0';
+          iframe.style.bottom = '0';
+          iframe.style.width = '0';
+          iframe.style.height = '0';
+          iframe.style.border = '0';
+          document.body.appendChild(iframe);
+
+          const doc = iframe.contentWindow.document;
+          doc.write(`
+              <html>
+              <head>
+                  <title>Relatório Financeiro</title>
+                  <style>
+                      @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
+                      body { font-family: 'Inter', sans-serif; color: #1e293b; padding: 20px; margin: 0; }
+                      .header { display: flex; align-items: center; justify-content: space-between; border-bottom: 2px solid #f1f5f9; padding-bottom: 20px; margin-bottom: 30px; }
+                      .logo { height: 40px; }
+                      .title { text-align: right; }
+                      .title h1 { margin: 0; font-size: 18px; font-weight: 900; text-transform: uppercase; letter-spacing: 1px; }
+                      .title p { margin: 5px 0 0; font-size: 9px; color: #64748b; font-weight: 700; text-transform: uppercase; }
+                      table { width: 100%; border-collapse: collapse; margin-bottom: 30px; }
+                      th { background: #f8fafc; text-align: left; padding: 10px 12px; font-size: 9px; text-transform: uppercase; font-weight: 900; color: #64748b; border-bottom: 1px solid #e2e8f0; }
+                      td { padding: 10px 12px; font-size: 10px; border-bottom: 1px solid #f1f5f9; font-weight: 500; }
+                      .amount { text-align: right; font-weight: 900; }
+                      .income { color: #059669; }
+                      .expense { color: #dc2626; }
+                      .pending { color: #d97706; font-size: 8px; font-weight: 900; }
+                      .totals { background: #f8fafc; padding: 15px; border-radius: 8px; display: flex; justify-content: flex-end; gap: 30px; border: 1px solid #f1f5f9; page-break-inside: avoid; }
+                      .total-item { text-align: right; }
+                      .total-item .label { font-size: 8px; font-weight: 900; color: #64748b; text-transform: uppercase; }
+                      .total-item .val { font-size: 14px; font-weight: 900; margin-top: 2px; }
+                      @media print {
+                          body { padding: 0; }
+                          .totals { border: 1px solid #e2e8f0; }
+                      }
+                  </style>
+              </head>
+              <body>
+                  <div class="header">
+                      <img src="${siteLogo.value}" class="logo" onerror="this.style.display='none'">
+                      <div class="title">
+                          <h1>Fluxo de Caixa</h1>
+                          <p>Período: ${rangeStr}</p>
+                          <p>Tipo: ${typeStr}</p>
+                      </div>
+                  </div>
+
+                  <table>
+                      <thead>
+                          <tr>
+                              <th>Data</th>
+                              <th>Descrição</th>
+                              <th>Categoria</th>
+                              <th>Status</th>
+                              <th class="amount">Valor</th>
+                          </tr>
+                      </thead>
+                      <tbody>
+                          ${list.map(t => `
+                              <tr>
+                                  <td>${t.human_date}</td>
+                                  <td>${t.description} ${t.recurring ? '<small style="color:#6366f1">[Recorrente]</small>' : ''}</td>
+                                  <td>${t.category}</td>
+                                  <td>${t.status === 'pago' ? 'PAGO' : '<span class="pending">PENDENTE</span>'}</td>
+                                  <td class="amount ${t.type === 'income' ? 'income' : 'expense'}">
+                                      ${t.type === 'income' ? '+' : '-'} R$ ${parseFloat(t.amount).toLocaleString('pt-BR', {minimumFractionDigits: 2})}
+                                  </td>
+                              </tr>
+                          `).join('')}
+                      </tbody>
+                  </table>
+
+                  <div class="totals">
+                      <div class="total-item">
+                          <div class="label">Total Geral do Período</div>
+                          <div class="val" style="color:#1e293b">R$ ${list.reduce((acc, t) => acc + parseFloat(t.amount || 0), 0).toLocaleString('pt-BR', {minimumFractionDigits: 2})}</div>
+                      </div>
+                  </div>
+              </body>
+              </html>
+          `);
+          doc.close();
+
+          // Esperar carregar e imprimir
+          iframe.contentWindow.focus();
+          setTimeout(() => {
+              iframe.contentWindow.print();
+              setTimeout(() => {
+                  document.body.removeChild(iframe);
+              }, 1000);
+          }, 500);
+      };
+
       // ── FORMATADORES DE UI ──
       const formatPhone = (v) => {
         if(!v) return "";
@@ -697,9 +1762,13 @@ html, body, #wpwrap, #wpbody, #wpbody-content, #wpfooter {
         if (filterStatus.value !== 'todos') {
             list = list.filter(c => c.status === filterStatus.value);
         }
-        if (!search.value) return list;
-        const q = search.value.toLowerCase();
-        return list.filter(c => c.name.toLowerCase().includes(q) || (c.phone && c.phone.includes(q)) || (c.product && c.product.toLowerCase().includes(q)));
+        const q = (search.value || '').toLowerCase();
+        return list.filter(c => {
+            const name = (c.name || '').toLowerCase();
+            const phone = (c.phone || '');
+            const product = (c.product || '').toLowerCase();
+            return name.includes(q) || phone.includes(q) || product.includes(q);
+        });
       });
 
       const totalFiltered = computed(() => filteredExpanded.value.length);
@@ -718,9 +1787,31 @@ html, body, #wpwrap, #wpbody, #wpbody-content, #wpfooter {
         nextTick(lucide.createIcons);
       });
 
-      const totalMRR = computed(() => clients.value.reduce((a,c) => a + parseFloat(c.mrr||0), 0).toLocaleString('pt-BR',{minimumFractionDigits:2}));
+      const totalMRR = computed(() => {
+          const raw = (clients.value || []).reduce((a,c) => a + parseFloat(c.mrr||0), 0);
+          return raw.toLocaleString('pt-BR',{minimumFractionDigits:2});
+      });
       const activeCount = computed(() => clients.value.filter(c => c.status==='ativo').length);
       const overdueCount = computed(() => clients.value.filter(c => c.status==='inadimplente').length);
+      const totalIncomes = computed(() => filteredTransactions.value.filter(t => (t.type === 'income' || t.type === 'Entrada') && t.status === 'pago').reduce((acc, t) => acc + parseFloat(t.amount || 0), 0));
+      const totalExpenses = computed(() => filteredTransactions.value.filter(t => (t.type === 'expense' || t.type === 'Saída') && t.status === 'pago').reduce((acc, t) => acc + parseFloat(t.amount || 0), 0));
+      const totalPendingExpenses = computed(() => filteredTransactions.value.filter(t => (t.type === 'expense' || t.type === 'Saída') && t.status === 'pendente').reduce((acc, t) => acc + parseFloat(t.amount || 0), 0));
+      const totalPendingIncomes = computed(() => filteredTransactions.value.filter(t => (t.type === 'income' || t.type === 'Entrada') && t.status === 'pendente').reduce((acc, t) => acc + parseFloat(t.amount || 0), 0));
+
+      // MÉTRICAS DE INTELIGÊNCIA ERP
+      const profitMargin = computed(() => totalIncomes.value > 0 ? ((totalIncomes.value - totalExpenses.value) / totalIncomes.value) * 100 : 0);
+      const projectedEndBalance = computed(() => asaasBalance.value + (totalIncomes.value - totalExpenses.value) + (totalPendingIncomes.value - totalPendingExpenses.value));
+      const topExpenseCategory = computed(() => {
+          const tally = {};
+          filteredTransactions.value.filter(t => (t.type === 'expense' || t.type === 'Saída')).forEach(t => {
+              tally[t.category] = (tally[t.category] || 0) + parseFloat(t.amount || 0);
+          });
+          const sorted = Object.keys(tally).sort((a,b) => tally[b] - tally[a]);
+          return sorted.length > 0 ? sorted[0] : 'Nenhum Gasto';
+      });
+      const arpu = computed(() => activeCount.value > 0 ? totalMRR.value / activeCount.value : 0);
+
+      const docFormTotal = computed(() => docForm.value.items.reduce((a,b)=>a+(parseFloat(b.price)||0),0));
 
       const fetchClients = async () => {
         loading.value = true;
@@ -745,16 +1836,19 @@ html, body, #wpwrap, #wpbody, #wpbody-content, #wpfooter {
         }
       };
 
-      const importAsaas = async () => {
+      const importGateway = async () => {
         importing.value = true;
         try {
           const r = await fetch('<?php echo $rest_url; ?>/asaas/import', { method: 'POST', headers: {'X-WP-Nonce': '<?php echo $rest_nonce; ?>'} });
           const d = await r.json();
           if(d.success) {
-            alert(`Sincronização concluída: ${d.imported} novos vínculos estabelecidos com sucesso.`);
+            let msg = `Sincronização concluída: ${d.imported} novos vínculos estabelecidos.`;
+            if(d.finance_synced > 0) msg += ` ${d.finance_synced} receitas adicionadas ao financeiro.`;
+            showToast(msg, 'success', gatewayLabel.value.toUpperCase());
             await fetchClients();
+            await fetchTransactions();
           } else {
-            alert('Falha na importação: ' + (d.error||'Desconhecida'));
+            showToast('Falha na importação: ' + (d.error||'Desconhecida'), 'error', gatewayLabel.value.toUpperCase());
           }
         } finally {
           importing.value = false;
@@ -784,7 +1878,7 @@ html, body, #wpwrap, #wpbody, #wpbody-content, #wpfooter {
         }
         
         massBilling.value = false;
-        alert(`Cobrança em massa finalizada! ✅\n${successCount} de ${overdues.length} mensagens disparadas com sucesso.`);
+        showToast(`Cobrança em massa finalizada: ${successCount} sucessos.`, 'success', 'WHATSAPP');
       };
 
       const syncOverduesSilently = async () => {
@@ -793,8 +1887,12 @@ html, body, #wpwrap, #wpbody, #wpbody-content, #wpfooter {
         try {
             const r = await fetch(`<?php echo $rest_url; ?>/asaas/sync-overdue`, { method: 'POST', headers: {'X-WP-Nonce': '<?php echo $rest_nonce; ?>'} });
             const res = await r.json();
-            if(res.success && res.updated > 0) {
-               await fetchClients();
+            if(res.success) {
+               if(res.updated > 0) await fetchClients();
+               if(res.finance_synced > 0) {
+                   await fetchTransactions();
+                   showToast(`${res.finance_synced} novas receitas sincronizadas do Asaas.`, 'success', 'FINANCEIRO');
+               }
             }
         } catch(e) {
             console.error('Erro no Auto-Sync de Inadimplência', e);
@@ -804,18 +1902,632 @@ html, body, #wpwrap, #wpbody, #wpbody-content, #wpfooter {
         }
       };
 
+      const isOverdue = (dateStr) => {
+          const today = new Date().toISOString().split('T')[0];
+          return dateStr < today;
+      };
+
+      const handleRecurrence = async (t) => {
+          if(!t.recurring) return;
+          
+          // Verifica se já existe um lançamento futuro para evitar duplicidade
+          // (Simples verificação por descrição e mês seguinte)
+          const nextDate = new Date(t.date);
+          nextDate.setMonth(nextDate.getMonth() + 1);
+          const nextMonthStr = nextDate.toISOString().split('-').slice(0,2).join('-');
+          
+          const alreadyExists = transactions.value.find(existing => 
+              existing.description === t.description && 
+              existing.date.startsWith(nextMonthStr)
+          );
+          
+          if(alreadyExists) return;
+
+          try {
+              await fetch('<?php echo $rest_url; ?>/finance/transactions', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json', 'X-WP-Nonce': '<?php echo $rest_nonce; ?>' },
+                  body: JSON.stringify({
+                      ...t,
+                      date: nextDate.toISOString().split('T')[0],
+                      status: 'pendente'
+                  })
+              });
+              showToast('Nova fatura recorrente gerada para o próximo ciclo.', 'success', 'AUTOMAÇÃO');
+          } catch(e) { console.error('Erro ao gerar recorrência', e); }
+      };
+
+      const markAsPaid = async (t) => {
+          let amount = t.amount;
+          const newAmount = prompt(`Confirmar pagamento de "${t.description}"?\n\nValor atual: R$ ${formatMoney(t.amount)}\nCaso o valor pago seja diferente, digite abaixo (apenas números):`, t.amount.toString());
+          
+          if (newAmount === null) return; // Cancelou
+          if (newAmount.trim() !== "") {
+              const parsed = parseFloat(newAmount.replace(',', '.'));
+              if (!isNaN(parsed)) amount = parsed;
+          }
+
+          try {
+              const res = await fetch(`<?php echo $rest_url; ?>/finance/transactions/${t.id}`, {
+                  method: 'PUT',
+                  headers: { 'Content-Type': 'application/json', 'X-WP-Nonce': '<?php echo $rest_nonce; ?>' },
+                  body: JSON.stringify({ status: 'pago', amount: amount })
+              });
+              if(res.ok) {
+                  showToast('Pagamento confirmado!', 'success', 'FINANCEIRO');
+                  
+                  // Se for recorrente, cria o próximo
+                  if(t.recurring) {
+                      await handleRecurrence({ ...t, amount: amount });
+                  }
+                  
+                  fetchTransactions();
+              }
+          } catch(e) { console.error(e); }
+      };
+
+      const fetchTransactions = async () => {
+          loadingFinance.value = true;
+          try {
+              const r = await fetch('<?php echo $rest_url; ?>/finance/transactions', { headers: {'X-WP-Nonce': '<?php echo $rest_nonce; ?>'} });
+              transactions.value = await r.json();
+          } finally {
+              loadingFinance.value = false;
+              nextTick(lucide.createIcons);
+          }
+      };
+
+      const saveTransaction = async () => {
+          savingFinance.value = true;
+          const isEdit = editTarget.value && editTarget.value.type === 'finance';
+          const url = isEdit ? `<?php echo $rest_url; ?>/finance/transactions/${editTarget.value.id}` : '<?php echo $rest_url; ?>/finance/transactions';
+          const method = isEdit ? 'PUT' : 'POST';
+
+          try {
+              const r = await fetch(url, {
+                  method: method,
+                  headers: { 'Content-Type': 'application/json', 'X-WP-Nonce': '<?php echo $rest_nonce; ?>' },
+                  body: JSON.stringify(financeForm.value)
+              });
+              if (r.ok) {
+                  const savedData = await r.json();
+                  showFinanceModal.value = false;
+                  
+                  // Se mudou para PAGO agora e é recorrente, gera o próximo
+                  if (financeForm.value.status === 'pago' && financeForm.value.recurring && (!editTarget.value || financeForm.value.oldStatus !== 'pago')) {
+                      await handleRecurrence({ ...financeForm.value, id: savedData.id });
+                  }
+                  
+                  editTarget.value = null;
+                  financeForm.value = { type: 'income', description: '', amount: 0, date: new Date().toISOString().split('T')[0], category: 'Vendas', status: 'pago' };
+                  showToast(isEdit ? 'Lançamento atualizado!' : 'Lançamento registrado!', 'success', 'FINANCEIRO');
+                  fetchTransactions();
+              }
+          } finally {
+              savingFinance.value = false;
+          }
+      };
+
+      const openFinanceEditModal = (t) => {
+          editTarget.value = { id: t.id, type: 'finance' };
+          financeForm.value = { 
+              type: t.type, 
+              description: t.description, 
+              amount: t.amount, 
+              date: t.date, 
+              category: t.category,
+              status: t.status || 'pago',
+              oldStatus: t.status || 'pago',
+              recurring: t.recurring || false
+          };
+          showFinanceModal.value = true;
+      };
+
+      const handleDeleteTransaction = async (id) => {
+          if(!confirm('Deseja realmente excluir este lançamento?')) return;
+          await fetch(`<?php echo $rest_url; ?>/finance/transactions/${id}`, { method: 'DELETE', headers: {'X-WP-Nonce': '<?php echo $rest_nonce; ?>'} });
+          showToast('Lançamento removido.');
+          fetchTransactions();
+      };
+
+      const fetchFinanceCategories = async () => {
+          try {
+              const r = await fetch('<?php echo $rest_url; ?>/finance/categories', { headers: {'X-WP-Nonce': '<?php echo $rest_nonce; ?>'} });
+              const d = await r.json();
+              if (d.categories) financeCategories.value = d.categories;
+          } catch(e) { /* mantém as padrão */ }
+      };
+
+      const addFinanceCategory = async () => {
+          const name = (newCategoryInput.value || '').trim();
+          if (!name || financeCategories.value.includes(name)) {
+              newCategoryInput.value = '';
+              addingCategory.value = false;
+              return;
+          }
+          savingCategory.value = true;
+          const updated = [...financeCategories.value, name];
+          try {
+              const r = await fetch('<?php echo $rest_url; ?>/finance/categories', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json', 'X-WP-Nonce': '<?php echo $rest_nonce; ?>' },
+                  body: JSON.stringify({ categories: updated })
+              });
+              const d = await r.json();
+              if (d.categories) {
+                  financeCategories.value = d.categories;
+                  financeForm.value.category = name;
+                  showToast(`Categoria "${name}" criada!`, 'success', 'FINANCEIRO');
+              }
+          } finally {
+              savingCategory.value = false;
+              newCategoryInput.value = '';
+              addingCategory.value = false;
+          }
+      };
+
+      const deleteFinanceCategory = async (name) => {
+          categoryDeleteConfirm.value = null;
+          const updated = financeCategories.value.filter(c => c !== name);
+          try {
+              const r = await fetch('<?php echo $rest_url; ?>/finance/categories', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json', 'X-WP-Nonce': '<?php echo $rest_nonce; ?>' },
+                  body: JSON.stringify({ categories: updated })
+              });
+              const d = await r.json();
+              if (d.categories) {
+                  financeCategories.value = d.categories;
+                  // Se era a categoria selecionada, reseta para a primeira disponível ou vazio
+                  if (financeForm.value.category === name) {
+                      financeForm.value.category = d.categories.length > 0 ? d.categories[0] : '';
+                  }
+                  showToast(`Categoria "${name}" excluída.`, 'success', 'FINANCEIRO');
+              }
+          } catch(e) {
+              showToast('Erro ao excluir categoria.', 'error', 'FINANCEIRO');
+          }
+      };
+
+      const fetchDocuments = async () => {
+          loadingDocs.value = true;
+          try {
+              const r = await fetch('<?php echo $rest_url; ?>/documents', { headers: {'X-WP-Nonce': '<?php echo $rest_nonce; ?>'} });
+              documents.value = await r.json();
+          } finally {
+              loadingDocs.value = false;
+              nextTick(lucide.createIcons);
+          }
+      };
+
+      const openDocModal = () => {
+          editTarget.value = null;
+          docForm.value = { type: 'orcamento', title: '', client_id: '', client_name: '', client_email: '', items: [{description: '', price: 0}], terms: '' };
+          showDocModal.value = true;
+          nextTick(lucide.createIcons);
+      };
+
+      const openDocEditModal = (doc) => {
+          editTarget.value = { id: doc.id, type: 'document' };
+          docForm.value = { 
+              type: doc.type, 
+              title: doc.title, 
+              client_id: doc.client_id || '',
+              client_name: doc.client_name, 
+              client_email: doc.client_email, 
+              items: JSON.parse(JSON.stringify(doc.items)), 
+              terms: doc.terms 
+          };
+          isNewDocClient.value = false;
+          showDocModal.value = true;
+          nextTick(lucide.createIcons);
+      };
+
+      const saveDocument = async () => {
+          if(!docForm.value.title || !docForm.value.client_name) return showToast('Preencha título e nome do cliente.', 'error');
+          savingDoc.value = true;
+          
+          const isEdit = editTarget.value && editTarget.value.type === 'document';
+          const url = isEdit ? `<?php echo $rest_url; ?>/documents/${editTarget.value.id}` : '<?php echo $rest_url; ?>/documents';
+          const method = isEdit ? 'PUT' : 'POST';
+
+          try {
+              const r = await fetch(url, {
+                  method: method,
+                  headers: { 'Content-Type': 'application/json', 'X-WP-Nonce': '<?php echo $rest_nonce; ?>' },
+                  body: JSON.stringify({ ...docForm.value, total: docFormTotal.value })
+              });
+              if (r.ok) {
+                  const docRes = await r.json();
+                  showDocModal.value = false;
+                  showToast(isEdit ? 'Documento atualizado!' : 'Documento gerado com sucesso!', 'success', 'VENDAS');
+                  
+                  // AUTOMAÇÃO: Cria tarefa no Kanban para qualquer novo documento
+                  if (!isEdit) {
+                      const taskPrefix = docForm.value.type === 'contrato' ? 'Contrato' : 'Orçamento';
+                      try {
+                          await fetch('<?php echo $rest_url; ?>/tasks', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json', 'X-WP-Nonce': '<?php echo $rest_nonce; ?>' },
+                              body: JSON.stringify({ 
+                                title: `${taskPrefix}: ${docForm.value.title}`, 
+                                priority: 'medium', 
+                                status: 'todo',
+                                client_id: docForm.value.client_id || '',
+                                client_name: docForm.value.client_name || '',
+                                document_id: docRes.id
+                              })
+                          });
+                          showToast('Tarefa criada no Kanban.', 'success', 'AUTOMAÇÃO');
+                          fetchTasks();
+                      } catch(e) {
+                          console.error('Falha na automação:', e);
+                      }
+                  }
+
+                  fetchDocuments();
+                  editTarget.value = null;
+              }
+          } catch(e) {
+              console.error(e);
+              showToast('Erro ao salvar documento.', 'error', 'SISTEMA');
+          } finally {
+              savingDoc.value = false;
+          }
+      };
+
+      const renderFinanceChart = () => {
+          if (financeChartInstance) financeChartInstance.destroy();
+          const ctx = document.getElementById('financeChart')?.getContext('2d');
+          if (!ctx) return;
+
+          financeChartInstance = new Chart(ctx, {
+              type: 'bar',
+              data: {
+                  labels: ['Consolidado Atualmente'],
+                  datasets: [
+                      {
+                          label: 'Entradas',
+                          data: [totalIncomes.value],
+                          backgroundColor: '#10b981',
+                          borderRadius: 20
+                      },
+                      {
+                          label: 'Saídas',
+                          data: [totalExpenses.value],
+                          backgroundColor: '#f43f5e',
+                          borderRadius: 20
+                      }
+                  ]
+              },
+              options: {
+                  responsive: true,
+                  maintainAspectRatio: false,
+                  plugins: { legend: { display: false } },
+                  scales: { y: { beginAtZero: true, grid: { display: false } }, x: { grid: { display: false } } }
+              }
+          });
+      };
+
+      const printProposal = (doc) => {
+          const siteLogoUrl = siteLogo.value;
+          const docTypeLabel = doc.type === 'orcamento' ? 'Orçamento' : 'Contrato';
+          const formattedTotal = parseFloat(doc.total || 0).toLocaleString('pt-BR', {minimumFractionDigits: 2});
+
+          const itemsHtml = (doc.items || []).map((item, idx) => `
+              <div style="display: flex; justify-content: space-between; padding: 15px 0; border-bottom: 1px solid #f1f5f9; align-items: flex-start;">
+                  <span style="font-size: 13px; color: #475569; text-align: justify; padding-right: 30px; line-height: 1.6; flex: 1;">
+                    <strong>${idx + 1}.</strong> ${item.description.replace(/\n/g, '<br>')}
+                  </span>
+                  <span style="font-size: 14px; font-weight: 900; color: #1e293b; white-space: nowrap; margin-left: 20px;">
+                    R$ ${parseFloat(item.price || 0).toLocaleString('pt-BR', {minimumFractionDigits: 2})}
+                  </span>
+              </div>
+          `).join('');
+
+          const iframe = document.createElement('iframe');
+          iframe.style.position = 'fixed';
+          iframe.style.right = '0';
+          iframe.style.bottom = '0';
+          iframe.style.width = '0';
+          iframe.style.height = '0';
+          iframe.style.border = '0';
+          document.body.appendChild(iframe);
+
+          const docContent = `
+              <html>
+              <head>
+                  <title>${docTypeLabel} - ${doc.client_name}</title>
+                  <style>
+                      @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
+                      body { font-family: 'Inter', sans-serif; color: #1e293b; padding: 40px; margin: 0; line-height: 1.6; }
+                      .header { display: flex; align-items: center; justify-content: space-between; border-bottom: 2px solid #f1f5f9; padding-bottom: 20px; margin-bottom: 40px; }
+                      .logo { height: 45px; max-width: 200px; object-fit: contain; }
+                      .doc-info { text-align: right; }
+                      .doc-info h1 { margin: 0; font-size: 22px; font-weight: 900; text-transform: uppercase; color: #4f46e5; letter-spacing: -1px; }
+                      .doc-info p { margin: 5px 0 0; font-size: 10px; color: #64748b; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; }
+                      .client-section { margin-bottom: 40px; background: #f8fafc; padding: 25px; border-radius: 16px; border: 1px solid #f1f5f9; }
+                      .client-section h2 { margin: 0 0 10px; font-size: 11px; font-weight: 900; text-transform: uppercase; color: #64748b; letter-spacing: 1px; }
+                      .client-name { font-size: 20px; font-weight: 900; color: #1e293b; tracking: -0.5px; }
+                      .items-header { display: flex; justify-content: space-between; margin-bottom: 15px; padding-bottom: 8px; border-bottom: 2px solid #e2e8f0; }
+                      .items-header span { font-size: 10px; font-weight: 900; text-transform: uppercase; color: #94a3b8; letter-spacing: 1.5px; }
+                      .total-section { margin-top: 50px; display: flex; justify-content: flex-end; }
+                      .total-box { border-top: 4px solid #1e293b; padding: 20px 0; text-align: right; min-width: 250px; }
+                      .total-box p { margin: 0; font-size: 11px; font-weight: 900; text-transform: uppercase; color: #64748b; letter-spacing: 1.5px; }
+                      .total-box h3 { margin: 5px 0 0; font-size: 32px; font-weight: 900; color: #1e293b; white-space: nowrap; }
+                      .terms-section { margin-top: 50px; padding: 30px; background: #fff; border: 1px solid #f1f5f9; border-radius: 20px; }
+                      .terms-section h4 { margin: 0 0 15px; font-size: 11px; font-weight: 900; text-transform: uppercase; color: #64748b; }
+                      .terms-content { font-size: 12px; color: #475569; text-align: justify; line-height: 1.8; }
+                      .footer { border-top: 1px solid #f1f5f9; margin-top: 80px; padding-top: 30px; text-align: center; font-size: 10px; color: #94a3b8; font-weight: 700; text-transform: uppercase; letter-spacing: 2px; }
+                      @media print { 
+                        body { padding: 0; } 
+                        .total-box { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+                      }
+                  </style>
+              </head>
+              <body>
+                  <div class="header">
+                      <img src="${siteLogo.value}" class="logo" onerror="this.style.display='none'">
+                      <div class="doc-info">
+                          <h1>${docTypeLabel} Comercial</h1>
+                          <p>Data de Emissão: ${doc.date}</p>
+                          <p>Protocolo: #${doc.id}</p>
+                      </div>
+                  </div>
+
+                  <div class="client-section">
+                      <h2>Apresentado para:</h2>
+                      <div class="client-name">${doc.client_name}</div>
+                  </div>
+
+                  <div style="margin-bottom: 20px;">
+                      <h2 style="font-size: 24px; font-weight: 900; color: #1e293b; margin-bottom: 20px; letter-spacing: -1px;">${doc.title}</h2>
+                  </div>
+
+                  <div class="items-header">
+                      <span>Descrição dos Serviços</span>
+                      <span>Valor de Investimento</span>
+                  </div>
+                  
+                  <div class="items-list">
+                      ${itemsHtml}
+                  </div>
+
+                  <div class="total-section">
+                      <div class="total-box">
+                          <p>Valor Total</p>
+                          <h3>R$ ${formattedTotal}</h3>
+                      </div>
+                  </div>
+
+                  ${doc.terms ? `
+                  <div class="terms-section">
+                      <h4>Notas e Condições</h4>
+                      <div class="terms-content">${doc.terms.replace(/\n/g, '<br>')}</div>
+                  </div>
+                  ` : ''}
+
+                  <div class="footer">
+                      Acro Manager Enterprise • Documento Digital Válido
+                  </div>
+              </body>
+              </html>
+          `;
+
+          iframe.contentWindow.document.open();
+          iframe.contentWindow.document.write(docContent);
+          iframe.contentWindow.document.close();
+
+          setTimeout(() => {
+              iframe.contentWindow.focus();
+              iframe.contentWindow.print();
+              setTimeout(() => {
+                  if (document.body.contains(iframe)) document.body.removeChild(iframe);
+              }, 1000);
+          }, 1000);
+      };
+
+      const sendDocWhatsApp = async (doc) => {
+          loadingDocs.value = true;
+          try {
+              const res = await fetch(`<?php echo $rest_url; ?>/documents/${doc.id}/whatsapp`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json', 'X-WP-Nonce': '<?php echo $rest_nonce; ?>' }
+              });
+              const d = await res.json();
+              
+              if (d.success) {
+                  showToast('Proposta enviada via WhatsApp!', 'success', 'WHATSAPP');
+              } else if (d.error === 'telefone_nao_encontrado') {
+                  const phone = prompt('Telefone do cliente não encontrado. Digite o número com DDD (ex: 11999999999):');
+                  if (phone) {
+                      const res2 = await fetch(`<?php echo $rest_url; ?>/documents/${doc.id}/whatsapp`, {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json', 'X-WP-Nonce': '<?php echo $rest_nonce; ?>' },
+                          body: JSON.stringify({ phone })
+                      });
+                      const d2 = await res2.json();
+                      if (d2.success) showToast('Proposta enviada com sucesso!', 'success', 'WHATSAPP');
+                      else showToast('Falha ao enviar.', 'error', 'WHATSAPP');
+                  }
+              } else {
+                  showToast(d.error || 'Falha ao enviar.', 'error', 'WHATSAPP');
+              }
+          } catch(e) {
+              console.error(e);
+              showToast('Erro técnico ao enviar WhatsApp.', 'error', 'WHATSAPP');
+          } finally {
+              loadingDocs.value = false;
+          }
+      };
+
+      const handleDeleteDoc = async (id) => {
+          if(!confirm('Deseja excluir este documento permanentemente?')) return;
+          await fetch(`<?php echo $rest_url; ?>/documents/${id}`, { method: 'DELETE', headers: {'X-WP-Nonce': '<?php echo $rest_nonce; ?>'} });
+          fetchDocuments();
+      };
+
+      const acceptDocument = async (doc) => {
+          if(!confirm(`Deseja marcar "${doc.title}" como ACEITO? Isso moverá a tarefa para "Concluído" no Kanban.`)) return;
+          
+          try {
+              const r = await fetch(`<?php echo $rest_url; ?>/documents/${doc.id}/accept`, {
+                  method: 'POST',
+                  headers: { 'X-WP-Nonce': '<?php echo $rest_nonce; ?>' }
+              });
+              
+              if (r.ok) {
+                  showToast('Proposta Aceita! Sucesso no fechamento.', 'success', 'NEGÓCIO');
+                  fetchDocuments();
+                  fetchTasks();
+              }
+          } catch(e) {
+              console.error(e);
+              showToast('Erro ao processar aceite.', 'error');
+          }
+      };
+
+      const revertDocument = async (doc) => {
+          if(!confirm(`Deseja REVERTER o aceite de "${doc.title}"? Isso moverá as tarefas de volta para "A Fazer" no Kanban.`)) return;
+          
+          try {
+              const r = await fetch(`<?php echo $rest_url; ?>/documents/${doc.id}/revert`, {
+                  method: 'POST',
+                  headers: { 'X-WP-Nonce': '<?php echo $rest_nonce; ?>' }
+              });
+              
+              if (r.ok) {
+                  showToast('Aceite Revertido! Status voltou para Pendente.', 'warning', 'SISTEMA');
+                  fetchDocuments();
+                  fetchTasks();
+              }
+          } catch(e) {
+              console.error(e);
+              showToast('Erro ao processar reversão.', 'error');
+          }
+      };
+
+      const taskColumns = [
+          { id: 'todo', name: 'A Fazer', color: 'bg-slate-300', bg: 'bg-slate-100/80' },
+          { id: 'doing', name: 'Execução', color: 'bg-sky-500', bg: 'bg-sky-100/50' },
+          { id: 'testing', name: 'Homologação', color: 'bg-amber-500', bg: 'bg-amber-100/50' },
+          { id: 'done', name: 'Concluído', color: 'bg-emerald-500', bg: 'bg-emerald-100/50' }
+      ];
+
+      const fetchTasks = async () => {
+          loadingTasks.value = true;
+          try {
+              const r = await fetch('<?php echo $rest_url; ?>/tasks', { headers: {'X-WP-Nonce': '<?php echo $rest_nonce; ?>'} });
+              tasks.value = await r.json();
+          } finally {
+              loadingTasks.value = false;
+              nextTick(lucide.createIcons);
+          }
+      };
+
+      const openTaskModal = () => {
+          editTarget.value = null;
+          taskForm.value = { title: '', status: 'todo', priority: 'medium', client_id: '', client_name: '', description: '' };
+          showTaskModal.value = true;
+          nextTick(lucide.createIcons);
+      };
+
+      const openTaskEditModal = (task) => {
+          editTarget.value = { id: task.id, type: 'task' };
+          taskForm.value = { 
+              title: task.title, 
+              status: task.status, 
+              priority: task.priority, 
+              client_id: task.client_id, 
+              client_name: task.client_name || '',
+              description: task.description || '' 
+          };
+          showTaskModal.value = true;
+          nextTick(lucide.createIcons);
+      };
+
+      const saveTask = async () => {
+          if(!taskForm.value.title) return showToast('Preencha o título da tarefa.', 'error');
+          savingTask.value = true;
+          
+          const isEdit = editTarget.value && editTarget.value.type === 'task';
+          const url = isEdit ? `<?php echo $rest_url; ?>/tasks/${editTarget.value.id}` : '<?php echo $rest_url; ?>/tasks';
+          const method = isEdit ? 'PUT' : 'POST';
+
+          try {
+              const r = await fetch(url, {
+                  method: method,
+                  headers: { 'Content-Type': 'application/json', 'X-WP-Nonce': '<?php echo $rest_nonce; ?>' },
+                  body: JSON.stringify(taskForm.value)
+              });
+              if(r.ok) {
+                  showTaskModal.value = false;
+                  showToast(isEdit ? 'Tarefa atualizada!' : 'Tarefa adicionada ao Kanban!', 'success', 'PRODUÇÃO');
+                  fetchTasks();
+                  editTarget.value = null;
+              }
+          } finally {
+              savingTask.value = false;
+          }
+      };
+
+      const onDragTask = (e, task) => {
+          e.dataTransfer.setData('taskId', task.id);
+          e.dataTransfer.effectAllowed = 'move';
+      };
+
+      const onDropTask = async (e, targetStatus) => {
+          const id = e.dataTransfer.getData('taskId');
+          const task = tasks.value.find(t => t.id == id);
+          if (!task || task.status === targetStatus) return;
+
+          const oldStatus = task.status;
+          task.status = targetStatus; // Optimistic UI
+          nextTick(lucide.createIcons);
+
+          try {
+              await fetch(`<?php echo $rest_url; ?>/tasks/${id}`, {
+                  method: 'PUT',
+                  headers: {'X-WP-Nonce': '<?php echo $rest_nonce; ?>', 'Content-Type': 'application/json'},
+                  body: JSON.stringify({ status: targetStatus })
+              });
+          } catch(err) {
+              task.status = oldStatus;
+          }
+      };
+
+      const handleDeleteTask = async (id) => {
+          if(!confirm('Excluir esta tarefa permanentemente?')) return;
+          await fetch(`<?php echo $rest_url; ?>/tasks/${id}`, { method: 'DELETE', headers: {'X-WP-Nonce': '<?php echo $rest_nonce; ?>'} });
+          fetchTasks();
+      };
+
+      const displayFinanceAmount = computed(() => financeForm.value.amount > 0 ? formatMoney(financeForm.value.amount) : '');
+
+
+      const handleFinanceAmountInput = (e) => {
+          let val = e.target.value.replace(/\D/g, '');
+          financeForm.value.amount = parseFloat(val) / 100;
+      };
+
       const fetchLogsAndMetrics = async () => {
           if (!asaasOk.value) return;
           loadingLogs.value = true;
           loadingReports.value = true;
           try {
-              const [resMetrics, resLogs] = await Promise.all([
+              const [resMetrics, resLogs, resCommercial] = await Promise.all([
                   fetch('<?php echo $rest_url; ?>/metrics/chart', { headers: {'X-WP-Nonce': '<?php echo $rest_nonce; ?>'} }).then(r=>r.json()),
-                  fetch('<?php echo $rest_url; ?>/logs', { headers: {'X-WP-Nonce': '<?php echo $rest_nonce; ?>'} }).then(r=>r.json())
+                  fetch('<?php echo $rest_url; ?>/logs', { headers: {'X-WP-Nonce': '<?php echo $rest_nonce; ?>'} }).then(r=>r.json()),
+                  fetch('<?php echo $rest_url; ?>/metrics/commercial', { headers: {'X-WP-Nonce': '<?php echo $rest_nonce; ?>'} }).then(r=>r.json())
               ]);
               
               metrics.value = resMetrics;
               logs.value = resLogs;
+              commercialStats.value = resCommercial;
+              
+              if(view.value === 'finance') {
+                  fetchTransactions();
+              }
               
               nextTick(renderChart);
           } finally {
@@ -895,6 +2607,7 @@ html, body, #wpwrap, #wpbody, #wpbody-content, #wpfooter {
                 clients.value.push(d);             }
             showModal.value = false; 
             form.value = { name:'', phone:'', mrr:null, site_url:'', product:'' }; 
+            showToast(isUpdate ? 'Dados atualizados!' : 'Novo registro criado.');
           }
         } finally {
           saving.value = false;
@@ -907,9 +2620,10 @@ html, body, #wpwrap, #wpbody, #wpbody-content, #wpfooter {
         clients.value = clients.value.filter(c => c.id !== id);
         deleteTarget.value = null;
         await fetch(`<?php echo $rest_url; ?>/clients/${id}`, { method: 'DELETE', headers: {'X-WP-Nonce': '<?php echo $rest_nonce; ?>'} });
+        showToast('Registro excluído permanentemente.');
       };
 
-      const formatMoney = v => parseFloat(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2});
+
       
       const sendWhatsApp = async (e, c, reminderType = 'manual') => {
         const btn = e.currentTarget;
@@ -922,6 +2636,7 @@ html, body, #wpwrap, #wpbody, #wpbody-content, #wpfooter {
               body: JSON.stringify({ reminder_type: reminderType })
           });
         } finally {
+          showToast('Notificação WhatsApp enviada!', 'success', 'WHATSAPP');
           if(icon) icon.classList.remove('animate-spin');
           nextTick(lucide.createIcons);
         }
@@ -940,11 +2655,12 @@ html, body, #wpwrap, #wpbody, #wpbody-content, #wpfooter {
               const d = await res.json();
               if(d.success) {
                   c.site_status = d.site_status;
+                  showToast(c.site_status==='blocked' ? 'Acesso ao Site Bloqueado' : 'Acesso ao Site Reativado', c.site_status==='blocked' ? 'error' : 'success');
                   nextTick(lucide.createIcons);
               }
           } catch(e) {
               console.error(e);
-              alert("Erro técnico ao alterar bloqueio do site.");
+              showToast("Erro técnico ao alterar bloqueio do site.", "error");
           }
       };
 
@@ -960,7 +2676,7 @@ html, body, #wpwrap, #wpbody, #wpbody-content, #wpfooter {
           const d = await r.json();
           if(d.success) {
             c.asaas_id = d.asaas_id;
-            // Opcional: mostrar um feedback visual de sucesso
+            showToast('Dados sincronizados com sucesso.');
           }
         } catch (err) {
             console.error('Erro na sincronização:', err);
@@ -1002,8 +2718,12 @@ html, body, #wpwrap, #wpbody, #wpbody-content, #wpfooter {
       
       const crmClients = computed(() => {
           if (!search.value) return clients.value;
-          const q = search.value.toLowerCase();
-          return clients.value.filter(c => c.name.toLowerCase().includes(q) || (c.phone && c.phone.includes(q)));
+          const q = (search.value || '').toLowerCase();
+          return clients.value.filter(c => {
+              const name = (c.name || '').toLowerCase();
+              const phone = (c.phone || '');
+              return name.includes(q) || phone.includes(q);
+          });
       });
 
       const getPipelineStage = (c) => {
@@ -1123,16 +2843,41 @@ html, body, #wpwrap, #wpbody, #wpbody-content, #wpfooter {
             syncOverduesSilently();
         });
         fetchDashboardStats();
+        fetchFinanceCategories();
+        fetchTransactions(); // Sempre busca para alimentar o Snapshot no Dashboard
+        fetchDocuments();     // Alimenta o card de Pipeline no Dashboard
+        fetchLogsAndMetrics(); // Alimenta os indicadores de desempenho comercial
       });
-      watch([view, showModal, showInvoicesModal, deleteTarget, filterStatus, syncingStatus, crmTab, filteredClients, crmClients], () => {
+
+      watch([view, showModal, showInvoicesModal, deleteTarget, filterStatus, syncingStatus, crmTab, filteredClients, crmClients, showFinanceModal, showDocModal, showTaskModal], () => {
           if(view.value === 'reports') {
               if(logs.value.length === 0 && !loadingReports.value) fetchLogsAndMetrics();
               else nextTick(renderChart);
           }
-          nextTick(lucide.createIcons);
+          if(view.value === 'finance' || view.value === 'dashboard') {
+              if(transactions.value.length === 0 && !loadingFinance.value) {
+                fetchTransactions();
+              } else if (view.value === 'finance') {
+                nextTick(renderFinanceChart);
+              } else if (view.value === 'dashboard') {
+                nextTick(renderFinanceChart); // Caso precise renderizar algum mini-grafico no futuro
+              }
+          }
+          if(view.value === 'docs' && documents.value.length === 0 && !loadingDocs.value) {
+              fetchDocuments();
+          }
+          if(view.value === 'tasks' && tasks.value.length === 0 && !loadingTasks.value) {
+              fetchTasks();
+          }
+          nextTick(() => { if (window.lucide) lucide.createIcons(); });
       });
 
-      return { view, clients, loading, search, filterStatus, showModal, showInvoicesModal, invoices, loadingInvoices, asaasBalance, loadingBalance, importing, massBilling, syncingStatus, saving, logs, loadingLogs, metrics, loadingReports, deleteTarget, editTarget, asaasOk, waOk, settingsUrl, form, filteredClients, crmClients, totalMRR, activeCount, overdueCount, fetchClients, fetchDashboardStats, fetchLogsAndMetrics, importAsaas, massBillOverdue, syncOverduesSilently, saveClient, executeDelete, formatMoney, sendWhatsApp, toggleBlock, syncAsaas, openInvoicesModal, displayMRR, handleMRRInput, displayPhone, handlePhoneInput, formatPhone, openEditModal, openLeadModal, crmTab, crmColumns, getPipelineStage, onDragStart, onDrop, getWaLink, moveStageByArrow, mrrAtivo, mrrRisco, pipelineBreakdown, productBreakdown, currentPage, totalPages, totalFiltered, itemsPerPage };
+      return { view, clients, loading, search, filterStatus, showModal, showInvoicesModal, invoices, loadingInvoices, asaasBalance, loadingBalance, importing, massBilling, syncingStatus, saving, logs, loadingLogs, metrics, loadingReports, deleteTarget, editTarget, asaasOk, waOk, settingsUrl, form, filteredClients, crmClients, totalMRR, activeCount, overdueCount, fetchClients, fetchDashboardStats, fetchLogsAndMetrics, importGateway, massBillOverdue, syncOverduesSilently, saveClient, executeDelete, formatMoney, sendWhatsApp, toggleBlock, syncAsaas, openInvoicesModal, displayMRR, handleMRRInput, displayPhone, handlePhoneInput, formatPhone, openEditModal, openLeadModal, crmTab, crmColumns, getPipelineStage, onDragStart, onDrop, getWaLink, moveStageByArrow, mrrAtivo, mrrRisco, pipelineBreakdown, productBreakdown, currentPage, totalPages, totalFiltered, itemsPerPage,
+               showFinanceModal, loadingFinance, savingFinance, transactions, financeForm, financeCategories, newCategoryInput, addingCategory, managingCategories, categoryDeleteConfirm, savingCategory, addFinanceCategory, deleteFinanceCategory, saveTransaction, openFinanceEditModal, handleDeleteTransaction, displayFinanceAmount, handleFinanceAmountInput, totalIncomes, totalPendingIncomes, totalExpenses, totalPendingExpenses, profitMargin, projectedEndBalance, topExpenseCategory, arpu, financeHistoryTab, filteredTransactions, financeDateStart, financeDateEnd, financeStatusFilter, setFinancePeriod, financePeriod, isOverdue, markAsPaid, printFinanceReport, siteLogo,
+               showDocModal, loadingDocs, savingDoc, documents, docForm, docFormTotal, openDocModal, openDocEditModal, saveDocument, handleDeleteDoc, acceptDocument, revertDocument, printProposal, sendDocWhatsApp, isNewDocClient, onDocClientSelect, handleDocItemPriceInput,
+               showTaskModal, loadingTasks, savingTask, tasks, taskForm, taskColumns, openTaskModal, openTaskEditModal, saveTask, onDragTask, onDropTask, handleDeleteTask,
+               toasts, showToast, commercialStats, gatewayLabel, importGateway
+      };
     }
   }).mount('#acro-app');
 })();

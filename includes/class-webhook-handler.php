@@ -40,7 +40,7 @@ class Acromidia_Webhook_Handler {
         switch ( $event ) {
             case 'PAYMENT_CONFIRMED':
             case 'PAYMENT_RECEIVED':
-                $this->handle_payment_confirmed( $client_post->ID, $client_name, $client_phone );
+                $this->handle_payment_confirmed( $client_post->ID, $client_name, $client_phone, $body['payment'] );
                 break;
 
             case 'PAYMENT_OVERDUE':
@@ -78,9 +78,43 @@ class Acromidia_Webhook_Handler {
     /**
      * Pagamento confirmado: atualiza status e envia WhatsApp de confirmação.
      */
-    private function handle_payment_confirmed( $post_id, $client_name, $client_phone ) {
+    private function handle_payment_confirmed( $post_id, $client_name, $client_phone, $payment ) {
         update_post_meta( $post_id, '_acro_status', 'ativo' );
         update_post_meta( $post_id, '_acro_last_payment', current_time( 'mysql' ) );
+
+        // --- INTEGRAÇÃO COM FLUXO DE CAIXA (ERP) ---
+        // Registra a entrada real baseada no pagamento recebido do Asaas
+        $payment_id = $payment['id'] ?? '';
+        $amount     = floatval( $payment['value'] ?? 0 );
+        $pay_date   = $payment['confirmedDate'] ?? $payment['paymentDate'] ?? current_time('Y-m-d');
+        $desc       = !empty($payment['description']) ? $payment['description'] : "Recebimento Asaas #{$payment_id}";
+
+        if ( ! empty( $payment_id ) ) {
+            // Verifica duplicidade
+            $existing = get_posts([
+                'post_type'  => 'acro_transaction',
+                'meta_key'   => '_acro_asaas_id',
+                'meta_value' => $payment_id,
+                'posts_per_page' => 1,
+                'post_status' => 'publish'
+            ]);
+
+            if ( empty( $existing ) ) {
+                $trans_id = wp_insert_post([
+                    'post_type'   => 'acro_transaction',
+                    'post_title'  => sanitize_text_field( $desc ),
+                    'post_status' => 'publish'
+                ]);
+                if ( ! is_wp_error( $trans_id ) ) {
+                    update_post_meta( $trans_id, '_acro_amount', $amount );
+                    update_post_meta( $trans_id, '_acro_type', 'income' );
+                    update_post_meta( $trans_id, '_acro_category', 'Vendas' );
+                    update_post_meta( $trans_id, '_acro_date', sanitize_text_field( $pay_date ) );
+                    update_post_meta( $trans_id, '_acro_asaas_id', $payment_id );
+                    error_log( "[Acromidia Webhook] Lançamento financeiro automático criado: {$desc} (R$ {$amount})" );
+                }
+            }
+        }
         
         $current_site_status = get_post_meta( $post_id, '_acro_site_status', true );
         if ( $current_site_status === 'blocked' ) {
