@@ -203,7 +203,13 @@ html, body, #wpwrap, #wpbody, #wpbody-content, #wpfooter {
       <div class="card-glass overflow-hidden shadow-2xl shadow-rose-100/30 border-t-4 border-t-rose-500">
         <div class="px-8 py-6 bg-gradient-to-r from-rose-50 to-white flex justify-between items-center border-b border-rose-100">
             <h3 class="font-black text-rose-800 uppercase text-xs tracking-widest flex items-center gap-2"><i data-lucide="alert-triangle" class="w-4 h-4 text-rose-500"></i> Radar de Inadimplência</h3>
-            <button v-if="overdueCount>0" @click="view='clients'; filterStatus='inadimplente';" class="text-[12px] font-black uppercase text-rose-600 hover:text-rose-700 tracking-widest bg-white border border-rose-200 px-3 py-1.5 rounded-full shadow-sm">Ver Todos</button>
+            <div class="flex items-center gap-3">
+                <button @click="syncOverduesSilently" :disabled="syncingStatus" class="text-[10px] font-black text-rose-600 uppercase tracking-widest hover:bg-rose-100/50 px-3 py-1.5 rounded-lg border border-rose-200 transition-all flex items-center gap-2 shadow-sm">
+                    <i data-lucide="refresh-cw" class="w-3.5 h-3.5" :class="{'animate-spin': syncingStatus}"></i>
+                    {{ syncingStatus ? '...' : 'Sincronizar' }}
+                </button>
+                <button v-if="overdueCount>0" @click="view='clients'; filterStatus='inadimplente';" class="text-[12px] font-black uppercase text-rose-600 hover:text-rose-700 tracking-widest bg-white border border-rose-200 px-3 py-1.5 rounded-full shadow-sm">Ver Todos</button>
+            </div>
         </div>
         <div v-if="loading" class="p-20 text-center"><i data-lucide="loader-2" class="w-8 h-8 animate-spin mx-auto text-rose-500"></i></div>
         <div v-else-if="!clients.filter(c => c.status==='inadimplente').length" class="p-20 text-center flex flex-col items-center justify-center">
@@ -518,7 +524,7 @@ html, body, #wpwrap, #wpbody, #wpbody-content, #wpfooter {
             <!-- ANALYTICS DE VALOR -->
             <div class="card-glass p-8 flex flex-col justify-between">
                 <div>
-                    <h3 class="input-label mb-8 flex items-center gap-2"><i data-lucide="gem" class="w-4 h-4 text-indigo-500"></i> Vitalidade do Negócio</h3>
+                     <h3 class="input-label mb-8 flex items-center gap-2"><i data-lucide="gem" class="w-4 h-4 text-indigo-500"></i> Vitalidade do Negócio</h3>
                     
                     <div class="space-y-8">
                         <div>
@@ -673,7 +679,12 @@ html, body, #wpwrap, #wpbody, #wpbody-content, #wpfooter {
                     <tr v-for="c in filteredClients" :key="c.id" :class="c.status==='inadimplente' ? 'bg-rose-50/20 hover:bg-rose-50/50 transition-all' : 'hover:bg-indigo-50/20 transition-all'">
                         <td class="px-8 py-6 relative">
                             <div v-if="c.status==='inadimplente'" class="absolute left-0 top-0 bottom-0 w-1.5 bg-rose-500 shadow-[0_0_10px_rgba(244,63,94,0.5)]"></div>
-                            <p class="font-black text-slate-900">{{ c.name }}</p>
+                            <p class="font-black text-slate-900 flex items-center gap-2">
+                                {{ c.name }}
+                                <span v-if="c.asaas_id" class="w-4 h-4 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center" title="Vinculado ao Asaas">
+                                    <i data-lucide="link-2" class="w-2.5 h-2.5"></i>
+                                </span>
+                            </p>
                             <div class="flex flex-col gap-1.5 mt-1.5">
                                 <p class="text-[10px] text-slate-400 font-bold uppercase tracking-widest flex items-center gap-1.5"><i data-lucide="phone" class="w-3 h-3 text-slate-300"></i>{{ formatPhone(c.phone) || 'S/ TELEFONE' }}</p>
                                 <p v-if="c.product" class="text-[9px] uppercase tracking-widest text-indigo-500 font-black bg-indigo-50 border border-indigo-100 py-0.5 px-2 rounded-lg w-max"><i data-lucide="tag" class="w-2.5 h-2.5 inline-block mr-1 align-text-bottom"></i>{{ c.product }}</p>
@@ -2146,7 +2157,12 @@ html, body, #wpwrap, #wpbody, #wpbody-content, #wpfooter {
             const r = await fetch(`<?php echo $rest_url; ?>/asaas/sync-overdue`, { method: 'POST', headers: {'X-WP-Nonce': '<?php echo $rest_nonce; ?>'} });
             const res = await r.json();
             if(res.success) {
-               if(res.updated > 0) await fetchClients();
+               if(res.updated > 0) {
+                   await fetchClients();
+                   showToast(`${res.updated} status de clientes atualizados do Asaas.`, 'success', 'SINCRONIZAÇÃO');
+               } else if (!syncingStatus.value) { // Se foi disparado manualmente e nada mudou
+                   showToast('Status já estão sincronizados.', 'info', 'SINCRONIZAÇÃO');
+               }
                if(res.finance_synced > 0) {
                    await fetchTransactions();
                    showToast(`${res.finance_synced} novas receitas sincronizadas do Asaas.`, 'success', 'FINANCEIRO');

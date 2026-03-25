@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Acromidia Manager
  * Description: Sistema completo de gestão de assinaturas, integração Asaas e notificações WhatsApp.
- * Version: 4.0.2
+ * Version: 4.0.3
  * Author: Especialista IA
  * Text Domain: acromidia-manager
  */
@@ -926,13 +926,18 @@ class Acromidia_Manager {
             ] );
             
             if ( ! is_wp_error( $post_id ) ) {
-                update_post_meta( $post_id, '_acro_gateway_customer_id', $c['id'] );
+                $asaas_id = trim($c['id']);
+                update_post_meta( $post_id, '_acro_gateway_customer_id', $asaas_id );
+                
+                // --- NOVO: Garante que o status seja sincronizado no ato da importação ---
+                $status = $this->get_client_status_from_gateway( $asaas_id );
+                update_post_meta( $post_id, '_acro_status', $status );
+
                 update_post_meta( $post_id, '_acro_cpf_cnpj', sanitize_text_field( $c['cpfCnpj']??'' ) );
                 update_post_meta( $post_id, '_acro_email', sanitize_email( $c['email']??'' ) );
                 update_post_meta( $post_id, '_acro_phone', sanitize_text_field( $c['phone'] ?? $c['mobilePhone'] ?? '' ) );
                 update_post_meta( $post_id, '_acro_mrr', 0 );
                 update_post_meta( $post_id, '_acro_site_url', '' );
-                update_post_meta( $post_id, '_acro_status', 'ativo' );
                 update_post_meta( $post_id, '_acro_pipeline_stage', 'onboarding' );
                 $imported++;
             }
@@ -997,7 +1002,7 @@ class Acromidia_Manager {
         
         $updated = 0;
         foreach ( $existing as $p ) {
-            $a_id = get_post_meta( $p->ID, '_acro_gateway_customer_id', true );
+            $a_id = trim(get_post_meta( $p->ID, '_acro_gateway_customer_id', true ));
             $current_status = get_post_meta( $p->ID, '_acro_status', true );
             
             if ( $a_id && in_array( $a_id, $overdue_asaas_ids ) ) {
