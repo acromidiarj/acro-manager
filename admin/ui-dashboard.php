@@ -1249,6 +1249,13 @@ html, body, #wpwrap, #wpbody, #wpbody-content, #wpfooter {
                     <i data-lucide="loader-2" class="w-10 h-10 animate-spin mb-4"></i>
                     <p class="font-black text-xs uppercase tracking-widest text-slate-400">Puxando Dados da Conta...</p>
                 </div>
+                <div v-else-if="loadingInvoicesError" class="text-center py-12">
+                    <div class="w-16 h-16 bg-rose-50 rounded-full flex items-center justify-center text-rose-500 mx-auto mb-4">
+                        <i data-lucide="alert-circle" class="w-8 h-8"></i>
+                    </div>
+                    <p class="text-rose-600 font-black text-xs uppercase tracking-widest">{{ loadingInvoicesError }}</p>
+                    <p class="text-slate-400 text-[10px] mt-2 font-bold uppercase tracking-tight">Verifique as chaves de API nas configurações.</p>
+                </div>
                 <div v-else-if="!invoices.length" class="text-center py-12">
                     <div class="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center text-slate-300 mx-auto mb-4"><i data-lucide="inbox" class="w-8 h-8"></i></div>
                     <p class="text-slate-400 font-black text-xs uppercase tracking-widest">Nenhuma fatura encontrada.</p>
@@ -1714,6 +1721,7 @@ html, body, #wpwrap, #wpbody, #wpbody-content, #wpfooter {
       const showInvoicesModal = ref(false);
       const invoices = ref([]);
       const loadingInvoices = ref(false);
+      const loadingInvoicesError = ref(null);
       const asaasBalance = ref(0);
       const loadingBalance = ref(false);
       const importing = ref(false);
@@ -3087,9 +3095,15 @@ html, body, #wpwrap, #wpbody, #wpbody-content, #wpfooter {
         invoices.value = [];
         showInvoicesModal.value = true;
         loadingInvoices.value = true;
+        loadingInvoicesError.value = null;
         try {
           const r = await fetch(`<?php echo $rest_url; ?>/clients/${c.id}/invoices`, { headers: {'X-WP-Nonce': '<?php echo $rest_nonce; ?>'} });
           const d = await r.json();
+          
+          if (d.error) {
+            loadingInvoicesError.value = d.error;
+          }
+          
           invoices.value = d.data || [];
           if(d.status && c.status !== d.status) {
               c.status = d.status; // Real-time UI update!
