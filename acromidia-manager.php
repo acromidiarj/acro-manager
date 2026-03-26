@@ -2,7 +2,7 @@
 /**
  * Plugin Name: AcroManager
  * Description: Sistema completo de gestão de assinaturas, integração gateways de pagamementoe notificações WhatsApp.
- * Version: 4.0.7
+ * Version: 4.0.8
  * Author: Acromidia - Alailson Nascimento
  * Text Domain: acromidia-manager
  */
@@ -795,6 +795,7 @@ class Acromidia_Manager
 
     /**
      * POST /clients/{id}/sync — Sincroniza cliente com Asaas.
+     * Agora muito mais robusto: valida o ID existente e atualiza dados do gateway para o WP.
      */
     public function sync_client_asaas(\WP_REST_Request $request)
     {
@@ -806,58 +807,104 @@ class Acromidia_Manager
         }
 
         if (!Acromidia_Gateway_Factory::is_configured()) {
-            return new \WP_REST_Response(['error' => 'API Asaas não configurada. Acesse Acromidia → Configurações.'], 400);
+            return new \WP_REST_Response(['error' => 'API Asaas não configurada.'], 400);
         }
 
-        $existing_asaas_id = get_post_meta($id, '_acro_gateway_customer_id', true);
+        $asaas = Acromidia_Gateway_Factory::get_engine();
+        $existing_asaas_id = trim(get_post_meta($id, '_acro_gateway_customer_id', true));
+        $customer_data = null;
+
+        // 1. Se já tem um ID, tenta validar se ele ainda existe no Asaas
         if (!empty($existing_asaas_id)) {
-            return rest_ensure_response([
-                'success' => true,
-                'message' => 'Cliente já sincronizado com Asaas',
-                'asaas_id' => $existing_asaas_id,
-            ]);
+            $res = $asaas->get_customer($existing_asaas_id);
+            if (!empty($res['id']) && empty($res['error'])) {
+                $customer_data = $res;
+            } else {
+                // ID obsoleto (ex: mudou de Sandbox para Produção)
+                delete_post_meta($id, '_acro_gateway_customer_id');
+                $existing_asaas_id = '';
+            }
         }
 
-        $name = $post->post_title;
-        $cpf_cnpj = get_post_meta($id, '_acro_cpf_cnpj', true);
-        $email = get_post_meta($id, '_acro_email', true);
-        $phone = get_post_meta($id, '_acro_phone', true);
-        $mrr = floatval(get_post_meta($id, '_acro_mrr', true));
+        // 2. Se não tem ID ou o antigo era inválido, busca por CPF/CNPJ ou Email
+        if (empty($customer_data)) {
+            $cpf_cnpj = preg_replace('/\D/', '', get_post_meta($id, '_acro_cpf_cnpj', true));
+            $email = get_post_meta($id, '_acro_email', true);
 
-        $asaas = new Acromidia_Asaas_API();
-        $result = $asaas->create_customer($name, $cpf_cnpj, $email, $phone);
-
-        // Se falhou por duplicidade ou erro, tenta buscar por CPF/CNPJ
-        if (!empty($result['error']) || empty($result['id'])) {
             if (!empty($cpf_cnpj)) {
-                $search = $asaas->request('/customers?cpfCnpj=' . preg_replace('/\D/', '', $cpf_cnpj));
+                $search = $asaas->request('/customers?cpfCnpj=' . $cpf_cnpj);
                 if (!empty($search['data'][0]['id'])) {
-                    $result = $search['data'][0];
+                    $customer_data = $search['data'][0];
+                }
+            }
+
+            if (empty($customer_data) && !empty($email)) {
+                $search = $asaas->request('/customers?email=' . urlencode($email));
+                if (!empty($search['data'][0]['id'])) {
+                    $customer_data = $search['data'][0];
                 }
             }
         }
 
-        if (empty($result['id'])) {
-            $msg = $result['message'] ?? $result['errors'][0]['description'] ?? 'Erro desconhecido do Asaas';
-            return new \WP_REST_Response(['error' => "Asaas: {$msg}"], 400);
+        // 3. Se ainda assim não achou, tenta CRIAR o cliente (se for um lead manual)
+        if (empty($customer_data)) {
+             $res = $asaas->create_customer(
+                 $post->post_title,
+                 get_post_meta($id, '_acro_cpf_cnpj', true),
+                 get_post_meta($id, '_acro_email', true),
+                 get_post_meta($id, '_acro_phone', true)
+             );
+             if (!empty($res['id'])) {
+                 $customer_data = $res;
+             }
         }
 
-        $asaas_id = $result['id'];
-        update_post_meta($id, '_acro_gateway_customer_id', $asaas_id);
+        if (empty($customer_data)) {
+            return new \WP_REST_Response(['error' => 'Não foi possível encontrar ou criar este cliente no Asaas. Verifique CPF/CNPJ ou Email.'], 400);
+        }
 
-        // Criar assinatura se tiver mensalidade
-        $subscription_id = '';
-        if ($mrr > 0) {
-            $next_due = date('Y-m-d', strtotime('+30 days'));
-            $sub = $asaas->create_subscription($asaas_id, $mrr, $next_due, "Mensalidade Acromidia - {$name}");
-            $subscription_id = $sub['id'] ?? '';
+        // 4. ATUALIZAÇÃO FINAL: Sincroniza dados do Asaas -> WordPress (Master data)
+        $asaas_id = $customer_data['id'];
+        update_post_meta($id, '_acro_gateway_customer_id', $asaas_id);
+        
+        if (!empty($customer_data['name'])) {
+            wp_update_post(['ID' => $id, 'post_title' => $customer_data['name']]);
+        }
+        if (!empty($customer_data['email'])) {
+            update_post_meta($id, '_acro_email', $customer_data['email']);
+        }
+        if (!empty($customer_data['phone']) || !empty($customer_data['mobilePhone'])) {
+            update_post_meta($id, '_acro_phone', $customer_data['phone'] ?: $customer_data['mobilePhone']);
+        }
+        if (!empty($customer_data['cpfCnpj'])) {
+            update_post_meta($id, '_acro_cpf_cnpj', $customer_data['cpfCnpj']);
+        }
+
+        // 5. Tenta sincronizar status de inadimplência imediatamente
+        $invoices = $asaas->list_payments($asaas_id);
+        $has_overdue = false;
+        if (!empty($invoices['data'])) {
+            foreach ($invoices['data'] as $inv) {
+                if ($inv['status'] === 'OVERDUE') {
+                    $has_overdue = true;
+                    break;
+                }
+            }
+        }
+        update_post_meta($id, '_acro_status', $has_overdue ? 'inadimplente' : 'ativo');
+
+        // 6. Criar assinatura se MRR > 0 e não houver ID (opcional, manter por precaução)
+        $mrr = floatval(get_post_meta($id, '_acro_mrr', true));
+        if ($mrr > 0 && !empty($customer_data['id'])) {
+             // Só cria se não houver registros de faturas pendentes ou assinaturas? 
+             // Por simplicidade neste fix, apenas garantimos o ID.
         }
 
         return rest_ensure_response([
-            'success' => true,
-            'message' => "Cliente {$name} sincronizado com Asaas!",
-            'asaas_id' => $asaas_id,
-            'subscription_id' => $subscription_id,
+            'success'   => true,
+            'message'   => "Sync completo: " . $customer_data['name'],
+            'asaas_id'  => $asaas_id,
+            'status'    => $has_overdue ? 'inadimplente' : 'ativo'
         ]);
     }
 

@@ -12,6 +12,9 @@ interface Acromidia_Gateway_Interface {
     
     /** Atualiza um cliente existente no Gateway. */
     public function update_customer( $gateway_customer_id, $data );
+
+    /** Busca dados de um cliente no Gateway. */
+    public function get_customer( $gateway_customer_id );
     
     /** Cria uma assinatura (recorrência) para o cliente. */
     public function create_subscription( $gateway_customer_id, $value, $next_due_date, $description );

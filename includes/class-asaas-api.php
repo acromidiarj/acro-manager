@@ -38,12 +38,18 @@ class Acromidia_Asaas_API implements Acromidia_Gateway_Interface {
         $data          = json_decode( $body, true );
 
         if ( $response_code >= 400 || is_null( $data ) ) {
-            error_log( "AcroManager - Erro na API Asaas ($response_code): " . $body );
+            error_log( "AcroManager - Erro na API Asaas ($response_code) em $endpoint: " . $body );
             return [ 'error' => true, 'message' => "Erro HTTP $response_code", 'raw' => $body ];
         }
 
-        if (strpos($endpoint, '/customers') !== false) {
-            error_log("AcroManager Debug - /customers response: " . substr($body, 0, 500));
+        // Diagnóstico de Respostas Vazias ou Sucesso
+        if (strpos($endpoint, '/customers') !== false || strpos($endpoint, '/payments') !== false) {
+            $count = isset($data['data']) ? count($data['data']) : 'N/A';
+            error_log("AcroManager Debug - API $method $endpoint | Response Code: $response_code | Items: $count");
+            
+            if (isset($data['data']) && empty($data['data'])) {
+                 error_log("AcroManager Debug - Resposta Vazia em $endpoint. Body: " . $body);
+            }
         }
 
         return $data;

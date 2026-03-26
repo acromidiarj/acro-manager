@@ -3093,10 +3093,16 @@ html, body, #wpwrap, #wpbody, #wpbody-content, #wpfooter {
           const d = await r.json();
           if(d.success) {
             c.asaas_id = d.asaas_id;
-            showToast('Dados sincronizados com sucesso.');
+            if(d.status) c.status = d.status;
+            showToast(d.message || 'Dados sincronizados com sucesso.', 'success', 'SISTEMA');
+            // Re-busca os clientes para atualizar tudo (nome, email, etc que podem ter mudado no sync)
+            fetchClients();
+          } else {
+             showToast(d.error || 'Erro na sincronização.', 'error');
           }
         } catch (err) {
             console.error('Erro na sincronização:', err);
+            showToast('Erro de conexão ao sincronizar.', 'error');
         } finally {
           icon.classList.remove('animate-spin');
         }
